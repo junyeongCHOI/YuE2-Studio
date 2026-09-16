@@ -1,0 +1,12 @@
+# YuE2 inference. Published on Hugging Face rather than PyPI, so it is pinned by
+# URL; it brings its own torch / transformers / safetensors pins with it.
+yue2-infer @ https://huggingface.co/m-a-p/YuE2-3B/resolve/main/yue2_infer-0.1.5-py3-none-any.whl
+
+# Dashboard
+fastapi==0.136.1
+uvicorn==0.46.0
+python-multipart==0.0.32
+
+# Mastering chain
+scipy>=1.14,<2
+pyloudnorm==0.2.0

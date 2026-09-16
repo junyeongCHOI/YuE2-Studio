@@ -1,0 +1,35 @@
+# Environments
+.venv/
+.venv-sheetsage/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Downloaded models (fetched by ./start and ./setup_sheetsage.sh)
+sheetsage2/
+*.whl
+
+# Generated takes, the library database and uploads
+outputs/
+*.db
+*.db-wal
+*.db-shm
+
+# Your own source material
+mix_source/
+
+# Secrets
+.env
+.env.*
+
+# Logs and caches
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Editors and OS
+.idea/
+.vscode/
+.claude/settings.local.json
+.DS_Store

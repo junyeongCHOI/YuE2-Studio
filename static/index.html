@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YuE2 Studio</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel-2:#1d212a; --line:#272c37;
+    --text:#e6e9ef; --muted:#8b93a7; --accent:#6ea8fe; --ok:#4ade80;
+    --warn:#fbbf24; --bad:#f87171; --star:#fbbf24; --radius:10px;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 ui-sans-serif,-apple-system,"SF Pro Text",system-ui,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px; flex-wrap:wrap;
+           border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:20; }
+  header h1 { font-size:15px; margin:0; font-weight:650; letter-spacing:.2px; }
+  .pill { font-size:12px; color:var(--muted); background:var(--panel-2);
+          border:1px solid var(--line); border-radius:999px; padding:3px 10px; white-space:nowrap; }
+  .pill b { color:var(--text); font-weight:600; }
+  .layout { display:grid; grid-template-columns:400px 1fr; gap:18px; padding:18px; align-items:start; }
+  @media (max-width:980px) { .layout { grid-template-columns:1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input,select,textarea,button { font:inherit; color:var(--text); background:var(--panel-2);
+        border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; }
+  textarea { resize:vertical; min-height:110px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; }
+  input[type=file] { padding:6px; font-size:12px; }
+  input:focus,select:focus,textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button { cursor:pointer; background:var(--accent); color:#0b1220; border:none; font-weight:650; }
+  button:hover:not(:disabled) { filter:brightness(1.08); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.ghost { background:var(--panel-2); color:var(--text); border:1px solid var(--line); font-weight:500; }
+  button.danger { background:var(--panel-2); color:var(--bad); border:1px solid var(--line); font-weight:500; }
+  .submit { margin-top:16px; padding:11px; }
+  .tabs { display:flex; gap:6px; background:var(--panel-2); border:1px solid var(--line);
+          border-radius:9px; padding:4px; margin-bottom:6px; }
+  .tabs button { background:transparent; border:none; color:var(--muted); font-weight:600;
+                 padding:7px 10px; border-radius:6px; font-size:13px; }
+  .tabs button.on { background:var(--accent); color:#0b1220; }
+
+  /* Field help, shown on hover. */
+  .hint { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+          border-radius:50%; border:1px solid var(--line); color:var(--muted); font-size:10px;
+          cursor:help; position:relative; vertical-align:middle; margin-left:5px; font-weight:700;
+          flex:none; user-select:none; }
+  .hint:hover { color:var(--accent); border-color:var(--accent); }
+  .hint .tip { display:none; position:fixed; width:min(300px, calc(100vw - 24px));
+               max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain;
+               background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+               padding:10px 12px; font-size:12px; line-height:1.65; color:var(--text); z-index:60;
+               box-shadow:0 10px 30px rgba(0,0,0,.55); text-align:left; font-weight:400;
+               cursor:auto; white-space:normal; }
+  .hint:hover .tip, .hint.open .tip { display:block; }
+  .hint.warn { color:var(--warn); border-color:#5a4a1e; }
+  .hint .tip b { color:var(--text); }
+  .hint .tip code { background:var(--bg); padding:1px 4px; border-radius:4px; font-size:11.5px; }
+  .hint .tip em { color:var(--warn); font-style:normal; }
+
+  .job { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+         padding:14px 16px; margin-bottom:12px; }
+  .job.fav { border-color:#5a4a1e; }
+  .job-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .job-title { font-weight:600; flex:1; min-width:150px; background:transparent; border:1px solid transparent;
+               padding:3px 6px; border-radius:6px; width:auto; }
+  .job-title:hover { border-color:var(--line); }
+  .star { width:auto; background:transparent; border:none; font-size:16px; padding:2px 4px;
+          color:var(--line); line-height:1; }
+  .star.on { color:var(--star); }
+  .status { font-size:11px; padding:2px 9px; border-radius:999px; border:1px solid var(--line);
+            text-transform:uppercase; letter-spacing:.5px; font-weight:650; }
+  .status.running { color:var(--accent); border-color:var(--accent); }
+  .status.complete { color:var(--ok); border-color:var(--ok); }
+  .status.failed,.status.interrupted { color:var(--bad); border-color:var(--bad); }
+  .status.queued,.status.cancelled { color:var(--muted); }
+  .kind { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 8px; }
+  .meta { color:var(--muted); font-size:12px; }
+  .bar { height:6px; background:var(--panel-2); border-radius:999px; overflow:hidden; margin:10px 0 6px; }
+  .bar > i { display:block; height:100%; background:var(--accent); transition:width .3s ease; }
+  .bar.indeterminate > i { width:35%; animation:slide 1.4s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
+  .metrics { display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; font-size:12px; align-items:flex-end; }
+  .metrics div { color:var(--muted); }
+  .metrics b { display:block; color:var(--text); font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
+  audio { width:100%; margin-top:10px; }
+  .busy-bar { margin-top:10px; display:flex; align-items:center; gap:10px; }
+  .busy-bar[hidden] { display:none; }   /* display:flex above would defeat [hidden] */
+  .busy-bar > i { display:block; height:6px; flex:1; border-radius:999px; background:var(--panel-2);
+                  position:relative; overflow:hidden; }
+  .busy-bar > i::after { content:""; position:absolute; inset:0 auto 0 0; width:35%;
+                         background:var(--accent); border-radius:999px;
+                         animation:slide 1.4s ease-in-out infinite; }
+  .busy-bar > span { font-size:12px; color:var(--accent); white-space:nowrap; }
+  .job.busy .actions { opacity:.45; }
+  .actions { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .actions select,.actions button,.actions a { width:auto; }
+  .actions select,.actions button { padding:6px 12px; font-size:12.5px; }
+  pre { background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:12px;
+        overflow:auto; max-height:300px; font-size:12px; margin:10px 0 0; white-space:pre-wrap; }
+  .empty { color:var(--muted); text-align:center; padding:40px 0; }
+  .summary { font-size:12.5px; color:var(--text); margin-top:10px; }
+  .summary .muted { color:var(--muted); }
+  .err-line { display:flex; align-items:center; gap:10px; margin-top:8px; color:var(--bad);
+              font-size:12.5px; flex-wrap:wrap; }
+  .err-line span { flex:1; min-width:180px; }
+  .err-line button { width:auto; padding:4px 10px; font-size:12px; }
+  .err-detail { color:var(--muted); font-size:11.5px; max-height:220px; }
+  .toolbar { display:flex; gap:8px; margin-bottom:12px; align-items:center; }
+  .toolbar input { flex:1; }
+  .toolbar select,.toolbar button { width:auto; }
+  .panel { margin-top:10px; background:var(--panel-2); border:1px solid var(--line);
+           border-radius:8px; padding:10px 12px; }
+  .panel-head { font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .lyrics-box { min-height:120px; background:var(--bg); font-size:12.5px; line-height:1.6; }
+  .style-box { min-height:54px; background:var(--bg); font-size:12.5px; line-height:1.6; }
+  .meta.clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .notes { margin-top:8px; font-size:12.5px; min-height:0; height:34px; font-family:inherit; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12.5px; color:var(--text); }
+  .check input { width:auto; }
+  .check label { margin:0; color:var(--text); font-size:12.5px; }
+  .field-label { display:flex; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>YuE2 Studio</h1>
+  <span class="pill">device <b id="device">—</b></span>
+  <span class="pill">queue <b id="queue">0</b></span>
+  <span class="pill" id="model-pill">model <b id="model">idle</b></span>
+  <span class="pill" id="ss-pill">전사 <b id="ss">—</b></span>
+  <span class="hint" id="header-hint">?<span class="tip">
+    <b>device</b> 는 추론 장치입니다. Apple Silicon 에서는 <code>mps</code> 가 선택되며,
+    CUDA 그래프 없이 eager 디코딩이라 NVIDIA 대비 느립니다.<br><br>
+    <b>model</b> 이 <code>warm</code> 이면 가중치가 메모리에 올라가 있어 다음 작업이
+    바로 시작됩니다.<br><br>
+    <b>전사</b> 는 SheetSage2 설치 여부입니다. 미설치라면
+    <code>./setup_sheetsage.sh</code> 를 실행하세요.
+  </span></span>
+</header>
+
+<div class="layout">
+  <div class="card">
+    <div class="tabs">
+      <button type="button" id="tab-compose" class="on" onclick="setMode('compose')">새 곡</button>
+      <button type="button" id="tab-remix" onclick="setMode('remix')">리믹스</button>
+    </div>
+
+    <div id="remix-source" style="display:none">
+      <label class="field-label">1. 원곡에서 악보 얻기
+        <span class="hint">?<span class="tip">
+          오디오를 올리면 SheetSage2 가 악보로 옮겨 적고, 끝나면 아래 악보 칸이 자동으로 채워집니다.
+          전사는 생성과 같은 큐에서 순서대로 실행됩니다.<br><br>
+          악보를 이미 갖고 있다면 이 단계를 건너뛰고 바로 붙여넣어도 됩니다.
+        </span></span>
+      </label>
+      <input type="file" id="audio-file" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,.aiff">
+      <div class="check">
+        <input type="checkbox" id="melody-only" checked>
+        <label for="melody-only">멜로디만 — 화음 기호 없이</label>
+        <span class="hint">?<span class="tip">
+          모델 카드가 권장하는 구성입니다. 선율만 남기고 화음 기호를 빼면
+          <code>cot="melody"</code> 로 원곡 선율을 따라가되 화성은 새로 짜게 됩니다.<br><br>
+          <em>끄면</em> 화음이 포함된 악보가 나오며, 그 경우에는 <code>cot="full"</code> 로
+          원곡 화성까지 유지하는 쪽이 맞습니다.
+        </span></span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div>
+          <label class="field-label">전사 길이 상한 (초)
+            <span class="hint">?<span class="tip">
+              긴 곡의 앞부분만 빠르게 확인할 때 씁니다. 비워두면 전체를 전사합니다.
+              참고로 40초 발췌 전사에 약 19초가 걸렸습니다.
+            </span></span>
+          </label>
+          <input id="max-seconds" type="number" placeholder="전체" min="10">
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button type="button" class="ghost" onclick="startTranscription()">전사 대기열에 추가</button>
+        </div>
+      </div>
+
+      <label class="field-label">2. ABC 악보
+        <span class="hint">?<span class="tip">
+          악보를 주면 YuE2 는 작곡 단계를 통째로 건너뛰고 이 선율 위에 새 편곡과 보컬을 올립니다.
+          그래서 리믹스가 새 곡보다 빠릅니다 — 32초 클립 기준 54초 대 145초.<br><br>
+          <em>주의</em>: <code>cot="melody"</code> 는 화음 기호를 자동으로 지우지 않습니다.
+          화음이 있는 악보에는 <code>cot="full"</code> 을 쓰거나, 화음 기호를 제거하세요.
+        </span></span>
+      </label>
+      <textarea id="abc" placeholder="X:1&#10;T:...&#10;M:4/4&#10;K:C&#10;..."></textarea>
+      <div class="summary" id="abc-analysis"></div>
+    </div>
+
+    <form id="form">
+      <label for="title">제목</label>
+      <input id="title" placeholder="neon rain">
+
+      <label class="field-label" for="style">스타일
+        <span class="hint" id="style-hint">?<span class="tip" id="style-tip">
+          장르, 악기, 보컬 성격, BPM 을 자연어로 씁니다.
+          예: <code>Funk / nu-disco, warm female vocal, slap bass, Rhodes piano, 110 BPM</code>
+        </span></span>
+      </label>
+      <input id="style" required
+             value="Funk / nu-disco, warm female vocal, slap bass, Rhodes piano, tight drums, 110 BPM">
+
+      <label class="field-label" for="lyrics">가사
+        <span class="hint">?<span class="tip">
+          <code>[Verse]</code>, <code>[Chorus]</code> 같은 구간 표시를 넣으면 곡 구조에 반영됩니다.
+        </span></span>
+      </label>
+      <textarea id="lyrics" required>[Verse]
+Neon rain on a quiet street
+Every window hums a song
+
+[Chorus]
+Turn it up, let the city glow
+We can dance until the morning shows</textarea>
+
+      <div class="row">
+        <div>
+          <label class="field-label" for="cot">악보 계획
+            <span class="hint">?<span class="tip">
+              곡을 만들기 전에 악보를 먼저 쓰게 할지 정합니다.<br><br>
+              <b>full</b> — 화음이 붙은 악보를 짜고 그 위에 연주를 올립니다. 기본값.<br>
+              <b>melody</b> — 선율만 짜고 화성은 연주 단계에서 결정합니다. 리믹스 권장.<br>
+              <b>off</b> — 악보 없이 바로 생성합니다. 가장 빠르지만 구조가 느슨해집니다.
+            </span></span>
+          </label>
+          <select id="cot">
+            <option value="full">full — 화음 포함</option>
+            <option value="melody">melody — 멜로디만</option>
+            <option value="off">off — 악보 없이</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="seed">시드
+            <span class="hint">?<span class="tip">
+              샘플링 난수 시드입니다. <em>다만 이 시드로 곡을 되살릴 수는 없습니다.</em><br><br>
+              같은 프로세스 안에서는 완전히 재현되지만(250/250 토큰 일치),
+              서버를 재시작하면 같은 시드·같은 악보·같은 설정으로도 800개 중 4개만 일치합니다.
+              MPS 가 프로세스마다 다른 커널을 골라 bf16 어텐션 결과가 미세하게 달라지기 때문입니다.<br><br>
+              마음에 든 테이크는 <b>이 곡 그대로 고음질로</b> (저장된 토큰 재합성) 로만 보존됩니다.
+            </span></span>
+          </label>
+          <input id="seed" type="number" value="123">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label class="field-label" for="length">길이
+            <span class="hint">?<span class="tip">
+              semantic 토큰 수로 길이를 제한합니다. 약 <b>25 토큰 = 오디오 1초</b>.<br><br>
+              <em>길이를 바꾸면 곡 자체가 달라집니다.</em> 같은 곡을 더 좋은 음질로 원한다면
+              길이는 그대로 두고 음질만 올리세요.
+            </span></span>
+          </label>
+          <select id="length">
+            <option value="800">약 30초 — 빠른 확인</option>
+            <option value="1500">약 60초</option>
+            <option value="3000">약 2분</option>
+            <option value="5400">약 3분 30초</option>
+            <option value="">전체 (최대 9000)</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="preset">마스터링
+            <span class="hint">?<span class="tip">
+              생성 후 자동으로 적용할 마스터링 프리셋입니다. 나중에 바꿔서 다시 걸 수 있습니다.<br><br>
+              <b>streaming</b> — -14 LUFS, -1.0 dBTP. 스트리밍 표준.<br>
+              <b>loud</b> — -9 LUFS. 소프트 클리퍼를 써서 리미터를 혹사하지 않습니다.<br>
+              <b>gentle</b> — -16 LUFS, 처리 최소화.<br>
+              <b>transparent</b> — 러드니스와 리미터만, 나머지 단계는 우회.<br>
+              <b>none</b> — 원본 그대로 둡니다.
+            </span></span>
+          </label>
+          <select id="preset"></select>
+        </div>
+      </div>
+
+      <label class="field-label" for="quality">음질
+        <span class="hint">?<span class="tip">
+          NAR 합성의 ODE 스텝 수입니다. <b>곡 자체가 아니라 오디오 해상도만</b> 바뀝니다 —
+          멜로디·보컬·편곡은 semantic 토큰이 결정하기 때문입니다.<br><br>
+          실측(32초 분량): ODE 4 는 합성 7.4초, ODE 32 는 51.9초. 그런데 두 렌더의
+          파형 상관도는 <b>0.993</b> 입니다.<br><br>
+          그래서 초안으로 곡을 확인하고, 마음에 들면 <b>같은 토큰을 재사용해</b> ODE 32 로
+          다시 렌더링하면 됩니다. 이 재합성은 비트 단위로 재현됩니다.
+        </span></span>
+      </label>
+      <select id="quality">
+        <option value="4">초안 — ODE 4, 합성 7배 빠름</option>
+        <option value="8">가벼운 확인 — ODE 8</option>
+        <option value="16">중간 — ODE 16</option>
+        <option value="32" selected>최종 — ODE 32</option>
+      </select>
+
+      <button class="submit" type="submit" id="submit">생성 대기열에 추가</button>
+      <div class="summary" id="estimate"></div>
+    </form>
+  </div>
+
+  <div>
+    <div class="toolbar">
+      <input id="search" placeholder="제목, 스타일, 가사, 메모 검색" oninput="scheduleRefresh()">
+      <select id="filter" onchange="refresh()">
+        <option value="">전체</option>
+        <option value="favorite">★ 즐겨찾기</option>
+        <option value="complete">완료</option>
+        <option value="failed">실패</option>
+      </select>
+    </div>
+    <div id="jobs"></div>
+  </div>
+</div>
+
+<script>
+// Timings measured on M5 / MPS with eager decode; see README.
+const COST = {
+  semanticTokensPerAudioSecond: 25,   // 800 tokens produced 32 s of audio
+  arTokensPerSecond: 17,              // semantic decode
+  abcTokensPerSecond: 20,             // score planning decode
+  abcTokensPerAudioSecond: 28,        // 908 score tokens for a 32 s song
+  abcMaxTokens: 4096,                 // the planner's own cap
+  melodyScoreFactor: 0.65,            // a chordless score is shorter
+  narPerAudioSecondPerStep: 0.0507,   // 51.9 s at 32 steps for 32 s of audio
+  vaePerAudioSecond: 0.09,
+  masterPerAudioSecond: 0.06,
+  transcribeFixed: 10,                // SheetSage2 start-up
+  transcribePerAudioSecond: 0.10,
+  coldLoadSeconds: 7,
+};
+
+const $ = id => document.getElementById(id);
+const fmtTime = s => {
+  if (s === null || s === undefined || !isFinite(s)) return "—";
+  s = Math.round(s);
+  return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분 ${String(s % 60).padStart(2, "0")}초`;
+};
+const fmtDb = v => (v === null || v === undefined || !isFinite(v)) ? "—" : v.toFixed(2);
+const escapeHtml = t => String(t ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// Lead with the exception line; the frames go behind a toggle.
+/* Tooltips are position:fixed and placed on hover, since the same markup appears
+   at both edges of the page and at any scroll position. */
+const TIP_GAP = 8, TIP_MARGIN = 12;
+
+function placeTip(hint) {
+  const tip = hint.querySelector(".tip");
+  if (!tip) return;
+  tip.style.left = "0px";
+  tip.style.top = "0px";
+  const anchor = hint.getBoundingClientRect();
+  const { width, height } = tip.getBoundingClientRect();
+
+  let left = anchor.left + anchor.width / 2 - width / 2;
+  left = Math.min(left, window.innerWidth - width - TIP_MARGIN);
+  left = Math.max(TIP_MARGIN, left);
+
+  const below = anchor.bottom + TIP_GAP;
+  const above = anchor.top - TIP_GAP - height;
+  // Below by default, above when that overflows, clamped when neither fits.
+  let top = below;
+  if (below + height > window.innerHeight - TIP_MARGIN && above > TIP_MARGIN) top = above;
+  top = Math.min(top, window.innerHeight - height - TIP_MARGIN);
+  top = Math.max(TIP_MARGIN, top);
+
+  tip.style.left = `${Math.round(left)}px`;
+  tip.style.top = `${Math.round(top)}px`;
+}
+
+document.addEventListener("mouseover", event => {
+  const hint = event.target.closest?.(".hint");
+  if (hint && !hint.contains(event.relatedTarget)) placeTip(hint);
+});
+
+function errorSummary(text) {
+  const lines = String(text).trim().split("\n").filter(line => line.trim());
+  return lines[lines.length - 1] || "알 수 없는 오류";
+}
+
+function toggleError(id) {
+  const detail = cards.get(id)?.element.querySelector("[data-error]");
+  if (detail) detail.hidden = !detail.hidden;
+}
+
+let mode = "compose";
+let abcAnalysis = null;
+let openScores = new Set(), openReports = new Set(), openNotes = new Set(), openLyrics = new Set();
+let audioState = new Map();   // job id -> chosen audio variant ("raw" | "mastered")
+let searchTimer = null, pollTimer = null;
+let sourceAudioSeconds = null, pipelineWarm = false;
+const busy = new Map();   // job id -> what it is doing, while a request is in flight
+
+/* Patched in place: rebuilding would destroy the <audio> elements every poll. */
+const cards = new Map();   // job id -> { element, signature }
+
+function submitLabel() {
+  if (mode !== "remix") return "생성 대기열에 추가";
+  if ($("abc").value.trim()) return "리믹스 대기열에 추가";
+  if ($("audio-file").files[0]) return "전사하고 리믹스 대기열에 추가";
+  return "리믹스 대기열에 추가";
+}
+
+function setMode(next) {
+  mode = next;
+  $("tab-compose").classList.toggle("on", next === "compose");
+  $("tab-remix").classList.toggle("on", next === "remix");
+  $("remix-source").style.display = next === "remix" ? "" : "none";
+  $("submit").textContent = submitLabel();
+  $("style-tip").innerHTML = next === "remix"
+    ? `원곡의 스타일이 아니라 <b>새로 입힐</b> 스타일을 씁니다. 원곡 선율 위에 이 편성으로
+       다시 연주됩니다. 예: <code>Bossa nova cover, soft female vocal, nylon guitar, 92 BPM</code>`
+    : `장르, 악기, 보컬 성격, BPM 을 자연어로 씁니다.
+       예: <code>Funk / nu-disco, warm female vocal, slap bass, Rhodes piano, 110 BPM</code>`;
+  if (next === "remix" && !$("abc").value.trim()) $("cot").value = "melody";
+  estimate();
+}
+
+function renderSeconds(audioSeconds, steps) {
+  return audioSeconds * COST.narPerAudioSecondPerStep * steps
+       + audioSeconds * COST.vaePerAudioSecond;
+}
+
+/* The song follows the source recording, not the generation-length cap. */
+function readDuration(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const probe = new Audio();
+    probe.preload = "metadata";
+    probe.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(probe.duration); };
+    probe.onerror = () => { URL.revokeObjectURL(url); reject(new Error("unreadable")); };
+    probe.src = url;
+  });
+}
+
+function plannedLength() {
+  const cap = parseInt($("length").value || "9000", 10);
+  const capSeconds = cap / COST.semanticTokensPerAudioSecond;
+  const abc = mode === "remix" ? $("abc").value.trim() : "";
+  const file = mode === "remix" ? $("audio-file").files[0] : null;
+  const limit = parseFloat($("max-seconds").value) || null;
+
+  let seconds = capSeconds, from = "길이 설정";
+  if (abc && abcAnalysis?.duration_seconds) {
+    seconds = abcAnalysis.duration_seconds; from = "악보";
+  } else if (file && sourceAudioSeconds) {
+    seconds = limit ? Math.min(sourceAudioSeconds, limit) : sourceAudioSeconds;
+    from = limit && limit < sourceAudioSeconds ? "원곡, 전사 상한 적용" : "원곡";
+  }
+  const capped = seconds > capSeconds;
+  return { seconds: Math.min(seconds, capSeconds), from, capped, capSeconds,
+           sourceSeconds: file ? sourceAudioSeconds : null, abc, file };
+}
+
+function estimate() {
+  const steps = parseInt($("quality").value, 10);
+  const cot = $("cot").value;
+  const plan = plannedLength();
+  const audioSeconds = plan.seconds;
+
+  const stages = [];
+  if (!pipelineWarm) stages.push(["모델 로드", COST.coldLoadSeconds]);
+  if (plan.file && !plan.abc)
+    stages.push(["원곡 전사", COST.transcribeFixed
+      + (plan.sourceSeconds ?? audioSeconds) * COST.transcribePerAudioSecond]);
+  // Transcribing produces the score, so the planner does not run.
+  const scoreSupplied = Boolean(plan.abc) || Boolean(plan.file && mode === "remix");
+  if (!scoreSupplied && cot !== "off") {
+    const tokens = Math.min(COST.abcMaxTokens, audioSeconds * COST.abcTokensPerAudioSecond
+      * (cot === "melody" ? COST.melodyScoreFactor : 1));
+    stages.push(["악보 계획", tokens / COST.abcTokensPerSecond]);
+  }
+  stages.push(["곡 생성", audioSeconds * COST.semanticTokensPerAudioSecond / COST.arTokensPerSecond]);
+  stages.push([`합성 (ODE ${steps})`, audioSeconds * COST.narPerAudioSecondPerStep * steps]);
+  stages.push(["오디오 디코드", audioSeconds * COST.vaePerAudioSecond]);
+  if ($("preset").value && $("preset").value !== "none")
+    stages.push(["마스터링", audioSeconds * COST.masterPerAudioSecond]);
+
+  const total = stages.reduce((sum, [, seconds]) => sum + seconds, 0);
+  const rows = stages.map(([label, seconds]) =>
+    `${label} ${fmtTime(seconds)}`).join(" · ");
+
+  $("estimate").innerHTML =
+    `오디오 약 <b>${fmtTime(audioSeconds)}</b> <span class="muted">(${plan.from})</span>` +
+    ` · 예상 소요 <b>${fmtTime(total)}</b>` +
+    `<span class="hint">?<span class="tip">
+       ${rows}<br><br>
+       이 기기에서 실측한 속도로 계산했습니다 — 자기회귀 디코딩 ${COST.arTokensPerSecond} 토큰/초,
+       NAR 합성은 오디오 1초당 ODE 스텝 하나에 ${COST.narPerAudioSecondPerStep}초.
+       ${scoreSupplied ? `<br><br>${plan.abc ? "악보를 주었으므로" : "전사가 악보를 만들어 주므로"}
+         작곡 단계를 건너뜁니다.` : ""}
+       ${cot === "off" && !scoreSupplied ? "<br><br>cot=off 라 악보 계획 단계가 없습니다." : ""}
+       ${steps < 32 ? `<br><br>초안이 마음에 들면 <b>이 곡 그대로 고음질로</b> 로 ODE 32 재합성에
+         약 ${fmtTime(renderSeconds(audioSeconds, 32))} 가 더 듭니다.` : ""}
+     </span></span>` +
+    (plan.capped
+      ? `<br><span style="color:var(--warn)">원곡이 ${fmtTime(plan.sourceSeconds ?? 0)} 인데
+         길이 설정이 ${fmtTime(plan.capSeconds)} 라 잘립니다.</span> 길이를 늘리세요.`
+      : "");
+}
+
+function scheduleRefresh() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(refresh, 250);
+}
+
+async function refresh() {
+  let state, library;
+  const filter = $("filter").value;
+  try {
+    const parameters = new URLSearchParams();
+    if ($("search").value.trim()) parameters.set("search", $("search").value.trim());
+    if (filter === "favorite") parameters.set("favorite", "true");
+    else if (filter) parameters.set("status", filter);
+    [state, library] = await Promise.all([
+      fetch("/api/state").then(r => r.json()),
+      fetch(`/api/library?${parameters}`).then(r => r.json()),
+    ]);
+  } catch { return schedulePoll(false); }
+
+  // A throw while rendering must not leave the poll loop unarmed.
+  try {
+    setText("device", state.device || "—");
+    setText("queue", state.queued);
+    setText("model", state.pipeline_error ? "error"
+      : state.pipeline_loading ? "loading…" : state.pipeline_loaded ? "warm" : "idle");
+    if (pipelineWarm !== Boolean(state.pipeline_loaded)) {
+      pipelineWarm = Boolean(state.pipeline_loaded);
+      estimate();
+    }
+    $("model-pill").title = state.pipeline_error || "";
+
+    const select = $("preset");
+    if (!select.options.length) {
+      for (const name of [...state.presets, "none"])
+        select.add(new Option(name === "none" ? "none — 원본 그대로" : name, name));
+      select.value = "streaming";
+    }
+    if ($("ss").textContent === "—")
+      fetch("/api/transcription").then(r => r.json())
+        .then(d => setText("ss", d.available ? "사용 가능" : "미설치"));
+
+    // /api/state is the live queue only; finished takes come from SQLite.
+    const live = new Map(state.jobs.map(j => [j.id, j]));
+    const rows = library.rows.map(row => live.get(row.id) ? { ...row, ...live.get(row.id) } : row);
+    for (const job of state.jobs)
+      if (!rows.some(r => r.id === job.id)) rows.unshift(job);
+
+    syncJobs(rows);
+  } finally {
+    schedulePoll(Boolean(state.running) || state.queued > 0);
+  }
+}
+
+function setText(id, value) {
+  const element = $(id);
+  if (element.textContent !== String(value)) element.textContent = value;
+}
+
+/* Poll quickly only while something is running. */
+function schedulePoll(busy) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(refresh, busy ? 1200 : 6000);
+}
+
+/* Anything that changes a card's structure. Progress, elapsed and title are
+   absent: those are patched without replacing the node. */
+function signature(job) {
+  const request = job.request || {};
+  // favourite and notes are patched in place so starring or annotating a take
+  // cannot interrupt its playback.
+  return JSON.stringify([
+    job.status, job.mastering?.preset ?? null,
+    job.result?.ode_steps ?? job.ode_steps ?? request.ode_steps ?? 32,
+    job.mode ?? request.mode ?? "compose",
+    audioState.get(job.id) ?? null,
+    Boolean(job.error),
+    job.audio_seconds ?? job.result?.audio_seconds ?? null,
+    job.style ?? request.style ?? "", job.cot ?? request.cot ?? "", job.seed ?? request.seed ?? null,
+  ]);
+}
+
+function syncJobs(rows) {
+  const container = $("jobs");
+  if (!rows.length) {
+    cards.clear();
+    container.innerHTML =
+      `<div class="card empty">${$("search").value ? "검색 결과가 없습니다." : "아직 생성한 곡이 없습니다."}</div>`;
+    return;
+  }
+  if (container.querySelector(".empty")) container.innerHTML = "";
+
+  const seen = new Set();
+  rows.forEach((job, index) => {
+    seen.add(job.id);
+    const wanted = signature(job);
+    let entry = cards.get(job.id);
+    if (!entry || entry.signature !== wanted) {
+      const holder = document.createElement("div");
+      holder.innerHTML = renderJob(job);
+      const element = holder.firstElementChild;
+      if (entry) entry.element.replaceWith(element);
+      else container.appendChild(element);
+      entry = { element, signature: wanted };
+      cards.set(job.id, entry);
+    }
+    entry.job = job;
+    patchJob(entry.element, job);
+    if (container.children[index] !== entry.element)
+      container.insertBefore(entry.element, container.children[index] || null);
+  });
+
+  for (const [id, entry] of [...cards])
+    if (!seen.has(id)) { entry.element.remove(); cards.delete(id); }
+}
+
+/* Update only volatile text, leaving <audio>, <textarea> and focus alone. */
+function patchJob(element, job) {
+  patchBusy(element, job.id);
+  element.classList.toggle("fav", Boolean(job.favorite));
+  const star = element.querySelector(".star");
+  if (star) {
+    star.classList.toggle("on", Boolean(job.favorite));
+    const glyph = job.favorite ? "★" : "☆";
+    if (star.textContent !== glyph) star.textContent = glyph;
+    star.setAttribute("onclick", `toggleFavorite('${job.id}', ${!job.favorite})`);
+  }
+
+  const notes = element.querySelector(".notes");
+  if (notes) {
+    notes.hidden = !openNotes.has(job.id);
+    if (document.activeElement !== notes && notes.value !== (job.notes || ""))
+      notes.value = job.notes || "";
+  }
+
+  const panel = element.querySelector("[data-lyrics]");
+  if (panel) {
+    panel.hidden = !openLyrics.has(job.id);
+    for (const [selector, value] of [[".style-box", job.style ?? job.request?.style ?? ""],
+                                     [".lyrics-box", job.lyrics ?? job.request?.lyrics ?? ""]]) {
+      const box = panel.querySelector(selector);
+      if (box && document.activeElement !== box && box.value !== value) box.value = value;
+    }
+  }
+
+  const title = element.querySelector(".job-title");
+  const wanted = job.title ?? job.request?.title ?? "";
+  const fallback = (job.style ?? job.request?.style ?? "").slice(0, 40) || job.id;
+  if (title && document.activeElement !== title && title.value !== (wanted || fallback))
+    title.value = wanted || fallback;
+
+  const elapsed = element.querySelector("[data-elapsed]");
+  if (elapsed) elapsed.textContent = fmtTime(job.elapsed);
+
+  const progress = element.querySelector("[data-progress]");
+  if (progress) progress.innerHTML = progressMarkup(job);
+}
+
+function progressMarkup(job) {
+  if (job.status !== "running") return "";
+  const stage = job.stage;
+  const known = stage && stage.total;
+  const percent = known ? Math.min(100, 100 * stage.completed / stage.total) : 0;
+  const rate = stage && stage.elapsed > 1 ? stage.completed / stage.elapsed : 0;
+  const remaining = known && rate > 0 ? (stage.total - stage.completed) / rate : NaN;
+  return `
+    <div class="bar ${known ? "" : "indeterminate"}"><i style="width:${percent}%"></i></div>
+    <div class="meta">${stage ? escapeHtml(stage.label) : "시작 중"}
+      ${stage && stage.total ? `· ${stage.completed}/${stage.total} ${escapeHtml(stage.unit || "")}`
+        : stage && stage.completed ? `· ${stage.completed} ${escapeHtml(stage.unit || "")}` : ""}
+      ${rate > 0 ? `· ${rate.toFixed(1)}/s` : ""}
+      ${isFinite(remaining) ? `· 남은 시간 약 ${fmtTime(remaining)}` : ""}
+      · 경과 <span data-elapsed>${fmtTime(job.elapsed)}</span></div>`;
+}
+
+function renderJob(job) {
+  const request = job.request || {};
+  const style = job.style ?? request.style ?? "";
+  const title = job.title ?? request.title ?? "";
+  const jobMode = job.mode ?? request.mode ?? "compose";
+  const lyrics = job.lyrics ?? request.lyrics ?? "";
+  const steps = job.result?.ode_steps ?? job.ode_steps ?? request.ode_steps ?? 32;
+  const truncated = (job.truncated ?? job.result?.truncated) || {};
+  // A take that hit its token cap needs more song, not just more fidelity.
+  const wasCut = Boolean(truncated.semantic) && jobMode !== "transcribe";
+
+  const terminal = ["complete", "failed", "cancelled", "interrupted"].includes(job.status);
+  const hasAudio = jobMode !== "transcribe" && (job.audio_seconds ?? job.result?.audio_seconds) != null;
+  const master = job.mastering;
+  const output = master ? master.output : null;
+  const variant = audioState.get(job.id) ?? (master ? "mastered" : "raw");
+
+  const player = hasAudio ? `
+      <audio controls preload="none" data-job="${job.id}"
+             src="/api/jobs/${job.id}/audio?variant=${variant}"></audio>` : "";
+
+  const audioActions = hasAudio ? `
+        <select autocomplete="off" onchange="switchVariant('${job.id}', this.value)" ${master ? "" : "disabled"}>
+          <option value="mastered" ${variant === "mastered" ? "selected" : ""}>마스터링본</option>
+          <option value="raw" ${variant === "raw" ? "selected" : ""}>원본</option>
+        </select>
+        <select autocomplete="off" onchange="remaster('${job.id}', this, this.value)">
+          <option value="">다시 마스터링…</option>
+          <option value="streaming">streaming (-14 LUFS)</option>
+          <option value="loud">loud (-9 LUFS)</option>
+          <option value="gentle">gentle (-16 LUFS)</option>
+          <option value="transparent">transparent (리미터만)</option>
+        </select>
+        ${wasCut
+          ? `<button onclick="upgrade('${job.id}', true)">이어서 풀버전으로${steps < 32 ? " (고음질)" : ""}</button>`
+          : steps < 32 ? `<button onclick="upgrade('${job.id}')">이 곡 그대로 고음질로</button>` : ""}
+        <a href="/api/jobs/${job.id}/audio?variant=${variant}" download>
+          <button class="ghost" type="button">다운로드</button></a>` : "";
+
+  // A failed take still has a request worth reading.
+  const commonActions = terminal ? `
+        ${job.request?.abc || job.abc ? `<button class="ghost" onclick="useScore('${job.id}')">이 악보로 리믹스</button>` : ""}
+        ${lyrics || style ? `<button class="ghost" onclick="toggleLyrics('${job.id}')">가사·스타일</button>` : ""}
+        ${job.request?.abc || job.abc || hasAudio ? `<button class="ghost" onclick="toggleScore('${job.id}')">악보</button>` : ""}
+        ${master ? `<button class="ghost" onclick="toggleReport('${job.id}')">마스터링 리포트</button>` : ""}
+        <button class="ghost" onclick="toggleNotes('${job.id}')">메모</button>
+        ${job.status !== "complete" ? `<button class="ghost" onclick="retry('${job.id}')">다시 시도</button>` : ""}
+        <button class="danger" onclick="removeJob('${job.id}')">삭제</button>` : "";
+
+  const metrics = terminal ? `
+      <div class="metrics">
+        ${hasAudio ? `<div>길이<b>${fmtTime(job.audio_seconds ?? job.result?.audio_seconds)}</b></div>` : ""}
+        <div>${jobMode === "transcribe" ? "전사 소요" : "생성 소요"}<b data-elapsed>${fmtTime(job.elapsed)}</b></div>
+        ${jobMode === "transcribe"
+          ? `<div>원본<b>${escapeHtml(job.source_name ?? request.source_name ?? "—")}</b></div>
+             ${job.result?.remix_job ? `<div>이어서<b>리믹스 대기열에 추가됨</b></div>` : ""}`
+          : `<div>음질<b>ODE ${steps}${jobMode === "resynth" ? " · 재합성" : ""}</b></div>`}
+        ${output ? `<div>LUFS<b>${fmtDb(output.lufs)}</b></div>
+          <div>트루피크<b>${fmtDb(output.true_peak_dbtp)} dBTP</b></div>
+          <div>상관도<b>${fmtDb(output.correlation)}</b></div>` : ""}
+        ${master ? `<div>프리셋<b>${escapeHtml(master.preset)}</b></div>` : ""}
+      </div>` : "";
+
+  const body = terminal ? `
+      ${player}
+      <div class="busy-bar" data-busy hidden><i></i><span></span></div>
+      <div class="actions">${audioActions}${commonActions}</div>
+      ${metrics}
+      <div class="panel" data-lyrics ${openLyrics.has(job.id) ? "" : "hidden"}>
+        <div class="panel-head">스타일</div>
+        <textarea class="style-box"
+            onchange="saveStyle('${job.id}', this.value)">${escapeHtml(style)}</textarea>
+        <div class="panel-head" style="margin-top:10px">가사</div>
+        <textarea class="lyrics-box"
+            onchange="saveLyrics('${job.id}', this.value)">${escapeHtml(lyrics)}</textarea>
+      </div>
+      <textarea class="notes" placeholder="메모" ${openNotes.has(job.id) ? "" : "hidden"}
+          onchange="saveNotes('${job.id}', this.value)">${escapeHtml(job.notes || "")}</textarea>
+      <div id="score-${job.id}"></div>
+      <div id="report-${job.id}"></div>` : "";
+
+  const kindLabel = { transcribe: "전사", resynth: "재합성" }[jobMode]
+    ?? ((job.source_kind === "abc" || request.abc) ? "리믹스" : null);
+
+  return `
+    <div class="job ${job.favorite ? "fav" : ""}">
+      <div class="job-head">
+        <button class="star ${job.favorite ? "on" : ""}" title="즐겨찾기"
+                onclick="toggleFavorite('${job.id}', ${!job.favorite})">${job.favorite ? "★" : "☆"}</button>
+        <input class="job-title" value="${escapeHtml(title || style.slice(0, 40) || job.id)}"
+               onchange="rename('${job.id}', this.value)">
+        ${kindLabel ? `<span class="kind">${kindLabel}</span>` : ""}
+        ${job.result?.logit_repairs ? `<span class="hint warn">!<span class="tip">
+            생성 도중 ${job.result.logit_repairs.steps}개 스텝에서 계산 결과에 비정상 값이 나와
+            해당 후보 토큰 ${job.result.logit_repairs.tokens}개를 제외하고 진행했습니다.
+            Apple Silicon 의 간헐적인 수치 오류이며, 예전에는 이 지점에서 생성이 실패했습니다.
+            영향은 보통 들리지 않을 정도지만, 결과가 이상하면 다시 만들어 보세요.
+          </span></span>` : ""}
+        ${truncated.semantic ? `<span class="hint warn">!<span class="tip">
+            생성 길이 한도에 도달해 곡이 끝나기 전에 잘렸습니다.
+            <b>이어서 풀버전으로</b> 를 누르면 여기까지 만들어진 토큰을 그대로 재사용하고
+            그 뒤를 이어서 작곡합니다 — 앞부분은 같은 음악이지만, 합성이 늘어난 곡 전체를
+            한 번에 보므로 파형까지 똑같지는 않습니다.<br><br>
+            길이 설정만 바꿔 다시 만들면 <em>완전히 다른 곡</em>이 나옵니다.
+          </span></span>` : ""}
+        <span class="status ${job.status}">${job.status}</span>
+        ${job.status === "running" || job.status === "queued"
+          ? `<button class="danger" style="width:auto;padding:4px 12px;font-size:12px"
+                     onclick="cancelJob('${job.id}')">취소</button>` : ""}
+        ${job.status === "queued"
+          ? `<button class="danger" style="width:auto;padding:4px 12px;font-size:12px"
+                     onclick="removeJob('${job.id}')">삭제</button>` : ""}
+      </div>
+      <div class="meta clamp">${escapeHtml(style)}${style ? " · " : ""}cot ${job.cot ?? request.cot ?? "?"} · seed ${job.seed ?? request.seed ?? "—"}</div>
+      <div data-progress>${progressMarkup(job)}</div>
+      ${job.error ? `
+        <div class="err-line">
+          <span>${escapeHtml(errorSummary(job.error))}</span>
+          <button class="ghost" onclick="toggleError('${job.id}')">오류 상세</button>
+        </div>
+        <pre class="err-detail" data-error hidden>${escapeHtml(job.error)}</pre>` : ""}
+      ${body}
+    </div>`;
+}
+
+async function patch(id, body) {
+  const response = await fetch(`/api/jobs/${id}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!response.ok) alert((await response.json()).detail || "저장할 수 없습니다");
+  refresh();
+}
+const rename = (id, title) => patch(id, { title });
+const saveNotes = (id, notes) => patch(id, { notes });
+const saveLyrics = (id, lyrics) => patch(id, { lyrics });
+const saveStyle = (id, style) => patch(id, { style });
+const toggleFavorite = (id, favorite) => patch(id, { favorite });
+
+function toggleLyrics(id) {
+  openLyrics.has(id) ? openLyrics.delete(id) : openLyrics.add(id);
+  const panel = cards.get(id)?.element.querySelector("[data-lyrics]");
+  if (panel) panel.hidden = !openLyrics.has(id);
+}
+
+function toggleNotes(id) {
+  openNotes.has(id) ? openNotes.delete(id) : openNotes.add(id);
+  const notes = cards.get(id)?.element.querySelector(".notes");
+  if (notes) notes.hidden = !openNotes.has(id);   // no re-render, no audio reset
+}
+
+function switchVariant(id, variant) {
+  audioState.set(id, variant);   // the card is rebuilt: the <audio> src changes
+  refresh();
+}
+
+async function retry(id) {
+  const response = await fetch(`/api/jobs/${id}/retry`, { method: "POST" });
+  if (!response.ok) { alert((await response.json()).detail || "다시 시도할 수 없습니다"); return; }
+  refresh();
+}
+
+async function upgrade(id, extend = false) {
+  if (busy.has(id)) return;
+  const parameters = new URLSearchParams({ ode_steps: "32" });
+  if (extend) parameters.set("extend_to", "9000");
+  busy.set(id, extend ? "풀버전 대기열에 추가 중…" : "재합성 대기열에 추가 중…");
+  applyBusy(id);
+  try {
+    const response = await fetch(`/api/jobs/${id}/upgrade?${parameters}`, { method: "POST" });
+    if (!response.ok) alert((await response.json()).detail || "재합성할 수 없습니다");
+  } finally {
+    busy.delete(id);
+    refresh();
+  }
+}
+
+async function remaster(id, menu, preset) {
+  // An action trigger, not a field: a value left selected is one the browser
+  // restores on reload, firing change again.
+  if (menu) menu.selectedIndex = 0;
+  if (!preset || busy.has(id)) return;
+  // Runs synchronously on the server for a few seconds.
+  busy.set(id, `${preset} 마스터링 중…`);
+  applyBusy(id);
+  try {
+    const response = await fetch(`/api/jobs/${id}/master?preset=${preset}`, { method: "POST" });
+    if (!response.ok) alert((await response.json()).detail || "마스터링에 실패했습니다");
+    else audioState.set(id, "mastered");
+  } finally {
+    busy.delete(id);
+    refresh();
+  }
+}
+
+function applyBusy(id) {
+  const card = cards.get(id)?.element;
+  if (card) patchBusy(card, id);
+}
+
+function patchBusy(element, id) {
+  const label = busy.get(id);
+  element.classList.toggle("busy", Boolean(label));
+  const bar = element.querySelector("[data-busy]");
+  if (bar) {
+    bar.hidden = !label;
+    const text = bar.querySelector("span");
+    if (text && label) text.textContent = label;
+  }
+  for (const control of element.querySelectorAll(".actions button, .actions select"))
+    control.disabled = Boolean(label);
+}
+
+async function analyseScore() {
+  const abc = $("abc").value.trim();
+  const target = $("abc-analysis");
+  if (!abc) { abcAnalysis = null; target.innerHTML = ""; return; }
+  abcAnalysis = await (await fetch("/api/abc/analyse", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ abc }) })).json();
+
+  const cot = $("cot").value;
+  const head = `<span class="muted">악보 ${abcAnalysis.lines}줄 · </span>`;
+  if (abcAnalysis.has_chords) {
+    const shown = abcAnalysis.chords.slice(0, 6).map(escapeHtml).join(", ");
+    target.innerHTML = head + `화음 ${abcAnalysis.chord_count}개 (${shown}${abcAnalysis.unique_chords > 6 ? " …" : ""})` +
+      (cot === "melody"
+        ? ` <span style="color:var(--bad)">— cot=melody 와 맞지 않습니다</span>
+            <span class="hint">?<span class="tip">
+              <code>cot="melody"</code> 는 화음 기호를 자동으로 지우지 않습니다. 화음이 남은 채로
+              넘기면 모드가 기대하지 않는 화성이 섞여 들어갑니다.<br><br>
+              화음 기호를 제거하거나, 악보 계획을 <b>full</b> 로 바꿔 원곡 화성을 살리세요.
+            </span></span>
+            <button type="button" class="ghost" style="width:auto;padding:4px 10px;margin-top:6px"
+                    onclick="stripChords()">화음 기호 제거</button>`
+        : ` <span class="muted">— cot=full 이라 원곡 화성을 유지합니다</span>`);
+  } else {
+    target.innerHTML = head + `화음 없음` +
+      (cot === "melody"
+        ? ` <span style="color:var(--ok)">— 리믹스 권장 구성</span>`
+        : ` <span style="color:var(--warn)">— cot=melody 를 권장합니다</span>`);
+  }
+}
+
+async function stripChords() {
+  const response = await fetch("/api/abc/strip-chords", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ abc: $("abc").value }) });
+  $("abc").value = (await response.json()).abc;
+  analyseScore();
+  estimate();
+}
+
+async function useScore(id) {
+  const abc = await (await fetch(`/api/jobs/${id}/abc`)).text();
+  if (!abc.trim()) { alert("이 항목에는 악보가 없습니다."); return; }
+  setMode("remix");
+  $("abc").value = abc;
+  // The score alone is rarely enough; carry the words and style too.
+  const source = cards.get(id)?.job;
+  if (source) {
+    const request = source.request || {};
+    if (source.lyrics ?? request.lyrics) $("lyrics").value = source.lyrics ?? request.lyrics;
+    if (source.style ?? request.style) $("style").value = source.style ?? request.style;
+  }
+  await analyseScore();
+  $("cot").value = abcAnalysis && abcAnalysis.has_chords ? "full" : "melody";
+  await analyseScore();
+  estimate();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function startTranscription() {
+  const file = $("audio-file").files[0];
+  if (!file) { alert("오디오 파일을 선택하세요."); return; }
+  const data = new FormData();
+  data.append("file", file);
+  data.append("melody_only", $("melody-only").checked);
+  if ($("max-seconds").value) data.append("max_seconds", $("max-seconds").value);
+  data.append("title", file.name);
+  const response = await fetch("/api/transcribe", { method: "POST", body: data });
+  if (!response.ok) { alert((await response.json()).detail || "전사를 시작할 수 없습니다"); return; }
+  refresh();
+}
+
+async function toggleScore(id) {
+  const target = document.getElementById(`score-${id}`);
+  if (!target) return;
+  if (openScores.has(id)) { openScores.delete(id); target.innerHTML = ""; return; }
+  openScores.add(id);
+  target.innerHTML = `<pre>${escapeHtml(await (await fetch(`/api/jobs/${id}/abc`)).text() || "(악보 없음)")}</pre>`;
+}
+
+async function toggleReport(id) {
+  const target = document.getElementById(`report-${id}`);
+  if (!target) return;
+  if (openReports.has(id)) { openReports.delete(id); target.innerHTML = ""; return; }
+  openReports.add(id);
+  target.innerHTML = `<pre>${escapeHtml(summariseMastering(
+    await (await fetch(`/api/jobs/${id}/mastering`)).json()))}</pre>`;
+}
+
+function summariseMastering(report) {
+  const pad = (t, w) => String(t).padEnd(w);
+  const lines = [`preset ${report.preset} · ${report.duration_seconds.toFixed(1)}초`, "",
+    `${pad("", 10)}${"LUFS".padStart(9)}${"truepeak".padStart(11)}${"corr".padStart(8)}`];
+  for (const key of ["input", "output"]) {
+    const v = report[key];
+    lines.push(pad(key, 10) + fmtDb(v.lufs).padStart(9)
+      + fmtDb(v.true_peak_dbtp).padStart(11) + fmtDb(v.correlation).padStart(8));
+  }
+  const stages = report.stages || {};
+  if (stages.denoise?.applied)
+    lines.push("", `denoise   노이즈 플로어 ${fmtDb(stages.denoise.noise_floor_db)} dB · `
+      + `게이트된 빈 ${(stages.denoise.gated_bin_fraction * 100).toFixed(1)}%`);
+  for (const b of stages.dynamic_eq?.bands || [])
+    lines.push(`dyn EQ    ${pad(b.band, 11)}${String(Math.round(b.frequency)).padStart(6)} Hz  `
+      + `최대 컷 ${b.max_cut_db.toFixed(2)} dB · 동작 ${(b.active_fraction * 100).toFixed(0)}%`);
+  for (const b of stages.multiband?.bands || [])
+    lines.push(`multiband ${pad(b.band, 11)}최대 GR ${b.max_reduction_db.toFixed(2)} dB · `
+      + `동작 중 평균 ${b.mean_reduction_when_active_db.toFixed(2)} dB`);
+  const st = stages.stereo;
+  if (st?.applied)
+    lines.push(`stereo    상관도 ${fmtDb(st.correlation_before)} → ${fmtDb(st.correlation_after)} · `
+      + `베이스 모노 ${st.bass_mono_hz} Hz` + (st.polarity_flipped ? " · 위상 반전 수정됨" : ""));
+  const li = stages.limiter;
+  if (li?.applied)
+    lines.push(`limiter   정규화 ${fmtDb(li.normalise_db)} dB · 최대 GR ${fmtDb(li.max_reduction_db)} dB · `
+      + `${li.iterations}회 반복 · 목표 도달 ${li.reached_target ? "예" : "아니오"}`
+      + (li.limited_by ? ` (${li.limited_by})` : ""));
+  return lines.join("\n");
+}
+
+async function cancelJob(id) { await fetch(`/api/jobs/${id}/cancel`, { method: "POST" }); refresh(); }
+
+async function removeJob(id) {
+  if (!confirm("이 항목과 생성물을 모두 삭제할까요? 되돌릴 수 없습니다.")) return;
+  const response = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+  if (!response.ok) alert((await response.json()).detail || "삭제할 수 없습니다");
+  refresh();
+}
+
+$("form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const length = $("length").value;
+  const abc = mode === "remix" ? $("abc").value.trim() : "";
+  const file = mode === "remix" ? $("audio-file").files[0] : null;
+  if (mode === "remix" && !abc && !file) {
+    alert("리믹스하려면 원곡 오디오 파일을 고르거나 ABC 악보를 붙여넣으세요."); return;
+  }
+  const payload = {
+    title: $("title").value, style: $("style").value, lyrics: $("lyrics").value,
+    cot: $("cot").value, seed: parseInt($("seed").value, 10),
+    ode_steps: parseInt($("quality").value, 10),
+    max_tokens: length ? parseInt(length, 10) : null, preset: $("preset").value,
+    abc: abc || null, source_kind: abc ? "abc" : "prompt",
+    strip_chords: Boolean(abc) && $("cot").value === "melody" && Boolean(abcAnalysis?.has_chords),
+  };
+  // No score but a recording is loaded: transcribe, then chain into this remix.
+  if (mode === "remix" && !abc) {
+    const data = new FormData();
+    data.append("file", file);
+    data.append("melody_only", $("melody-only").checked);
+    if ($("max-seconds").value) data.append("max_seconds", $("max-seconds").value);
+    data.append("title", $("title").value || file.name);
+    data.append("remix", JSON.stringify({ ...payload, abc: null }));
+    const queued = await fetch("/api/transcribe", { method: "POST", body: data });
+    if (!queued.ok) { alert((await queued.json()).detail || "전사를 시작할 수 없습니다"); return; }
+    refresh();
+    return;
+  }
+
+  const response = await fetch("/api/jobs", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) { alert(JSON.stringify(await response.json())); return; }
+  refresh();
+});
+
+for (const id of ["length", "quality"]) $(id).addEventListener("change", estimate);
+$("abc").addEventListener("input", () => { estimate(); analyseScore(); $("submit").textContent = submitLabel(); });
+$("audio-file").addEventListener("change", async () => {
+  $("submit").textContent = submitLabel();
+  sourceAudioSeconds = null;
+  estimate();
+  const file = $("audio-file").files[0];
+  if (file) {
+    try { sourceAudioSeconds = await readDuration(file); } catch { sourceAudioSeconds = null; }
+    estimate();
+  }
+});
+for (const id of ["cot", "preset", "max-seconds"]) $(id).addEventListener("change", estimate);
+$("cot").addEventListener("change", analyseScore);
+
+setMode("compose");
+refresh();
+</script>
+</body>
+</html>
