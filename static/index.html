@@ -395,6 +395,46 @@ function useBackendCost(backend) {
 }
 
 const $ = id => document.getElementById(id);
+
+/* The left pane is a settings panel you come back to, so it is restored on the
+   next visit -- everything except the title and the file picker, which belong
+   to one take. Storage can be refused outright (private window, blocked site
+   data) or full, so every access is guarded and the page works with none of it. */
+const SETTINGS_KEY = "yue2.form.v1";
+const SETTINGS_FIELDS = ["style", "lyrics", "cot", "seed", "length", "preset", "quality",
+                         "score-scale", "cfg-scale", "abc", "melody-only", "max-seconds"];
+let settingsReady = false, saveTimer = null;
+
+function readSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function saveSettings() {
+  if (!settingsReady) return;          // the restore has not run yet
+  const saved = { mode };
+  for (const id of SETTINGS_FIELDS) {
+    const element = $(id);
+    saved[id] = element.type === "checkbox" ? element.checked : element.value;
+  }
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(saved)); } catch { /* refused or full */ }
+}
+
+const scheduleSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveSettings, 400); };
+
+function restoreSettings(saved) {
+  for (const id of SETTINGS_FIELDS) if (id in saved) applySetting(id, saved[id]);
+}
+
+function applySetting(id, value) {
+  const element = $(id);
+  if (element.type === "checkbox") { element.checked = Boolean(value); return; }
+  // A select whose options have not arrived yet (presets come with /api/state)
+  // keeps its own value; the populating code re-applies the saved one.
+  if (element.tagName === "SELECT" && ![...element.options].some(o => o.value === value)) return;
+  element.value = value;
+}
+
 const fmtTime = s => {
   if (s === null || s === undefined || !isFinite(s)) return "—";
   s = Math.round(s);
@@ -479,6 +519,7 @@ function setMode(next) {
        예: <code>Funk / nu-disco, warm female vocal, slap bass, Rhodes piano, 110 BPM</code>`;
   if (next === "remix" && !$("abc").value.trim()) $("cot").value = "melody";
   estimate();
+  saveSettings();
 }
 
 function renderSeconds(audioSeconds, steps) {
@@ -653,6 +694,7 @@ async function refresh() {
       for (const name of [...state.presets, "none"])
         select.add(new Option(name === "none" ? "none — 원본 그대로" : name, name));
       select.value = "streaming";
+      applySetting("preset", readSettings().preset);
     }
     if ($("ss").textContent === "—")
       fetch("/api/transcription").then(r => r.json())
@@ -1204,15 +1246,30 @@ $("audio-file").addEventListener("change", async () => {
 for (const id of ["cot", "preset", "max-seconds", "score-scale", "cfg-scale"])
   $(id).addEventListener("change", estimate);
 for (const id of ["score-scale", "cfg-scale"]) $(id).addEventListener("input", estimate);
-$("cot").addEventListener("change", () => {
-  // Without a score there is nothing to weight; say so instead of charging for it.
+// Without a score there is nothing to weight; say so instead of charging for it.
+function syncScoreScale() {
   const off = $("cot").value === "off";
   $("score-scale").disabled = off;
   $("score-scale").title = off ? "cot=off 에는 악보가 없어 적용되지 않습니다" : "";
-});
+}
+$("cot").addEventListener("change", syncScoreScale);
 $("cot").addEventListener("change", analyseScore);
 
-setMode("compose");
+const savedSettings = readSettings();
+setMode(savedSettings.mode === "remix" ? "remix" : "compose");
+// After setMode, so a saved cot outlasts the nudge the remix tab applies.
+restoreSettings(savedSettings);
+syncScoreScale();
+for (const id of SETTINGS_FIELDS) {
+  const element = $(id);
+  element.addEventListener("change", saveSettings);
+  if (element.tagName === "TEXTAREA" || ["text", "number"].includes(element.type))
+    element.addEventListener("input", scheduleSave);
+}
+settingsReady = true;
+$("submit").textContent = submitLabel();
+estimate();
+if ($("abc").value.trim()) analyseScore();
 refresh();
 </script>
 </body>
