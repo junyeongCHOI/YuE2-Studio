@@ -4,8 +4,25 @@
     {
       "name": "yue2-studio",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8710"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "server:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8710"
+      ],
       "port": 8710
+    },
+    {
+      "name": "yue2-studio-torch",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": [
+        "-c",
+        "YUE2_BACKEND=torch exec .venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8711"
+      ],
+      "port": 8711
     }
   ]
 }

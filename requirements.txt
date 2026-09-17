@@ -7,6 +7,11 @@ fastapi==0.136.1
 uvicorn==0.46.0
 python-multipart==0.0.32
 
+# The MLX backend (mlx_convert.py / mlx_yue2.py), independent of the torch pins
+# above. Apple Silicon only, so the marker keeps other platforms installable;
+# the dashboard falls back to torch when mlx or a converted model is missing.
+mlx==0.32.2; sys_platform == "darwin" and platform_machine == "arm64"
+
 # Mastering chain
 scipy>=1.14,<2
 pyloudnorm==0.2.0

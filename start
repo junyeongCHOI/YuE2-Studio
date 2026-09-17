@@ -11,6 +11,9 @@ PORT=8710
 OPEN=1
 MODELS=1
 TRANSCRIPTION=0
+BACKEND=mlx
+MODEL=""
+LIST_MODELS=0
 
 usage() {
     cat <<'USAGE'
@@ -20,9 +23,14 @@ usage() {
   --no-open           브라우저를 열지 않음
   --skip-models       가중치 확인/다운로드를 건너뜀 (이미 받아둔 경우)
   --with-transcription  오디오 전사용 SheetSage2 도 함께 설치 (약 2.8GB)
+  --backend <mlx|torch>  곡 생성 백엔드 (기본 mlx — 약 2.7배 빠름)
+  --torch             --backend torch 와 같음 (릴리스 가중치 그대로)
+  --model <경로>      쓸 MLX 변환본 (기본 models/YuE2-3B-mlx-8bit)
+  --list-models       쓸 수 있는 모델을 보여주고 종료
   -h, --help          이 도움말
 
-처음 실행하면 YuE2 가중치 약 7.8GB 를 받습니다. 두 번째부터는 바로 뜹니다.
+처음 실행하면 YuE2 가중치 약 7.8GB 를 받고, 그것을 MLX 로 변환해 4.9GB 를 더 씁니다.
+두 번째부터는 바로 뜹니다. 대시보드 헤더에서도 모델을 바꿀 수 있습니다.
 USAGE
 }
 
@@ -32,10 +40,19 @@ while [ $# -gt 0 ]; do
         --no-open) OPEN=0; shift ;;
         --skip-models) MODELS=0; shift ;;
         --with-transcription) TRANSCRIPTION=1; shift ;;
+        --backend) BACKEND="${2:?--backend 에 mlx 또는 torch 가 필요합니다}"; shift 2 ;;
+        --torch) BACKEND=torch; shift ;;
+        --model) MODEL="${2:?--model 에 경로가 필요합니다}"; BACKEND=mlx; shift 2 ;;
+        --list-models) LIST_MODELS=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "알 수 없는 옵션: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
+
+case "$BACKEND" in
+    mlx|torch) ;;
+    *) echo "--backend 는 mlx 또는 torch 입니다: $BACKEND" >&2; exit 2 ;;
+esac
 
 step() { printf '\n\033[1;34m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[1;33m!\033[0m %s\n' "$1" >&2; }
@@ -49,7 +66,7 @@ if ! command -v uv >/dev/null 2>&1; then
     die "uv 가 필요합니다. 설치: curl -LsSf https://astral.sh/uv/install.sh | sh"
 fi
 
-if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+if [ "$LIST_MODELS" = 0 ] && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     die "포트 $PORT 가 이미 사용 중입니다. --port 로 다른 포트를 쓰거나 기존 서버를 종료하세요."
 fi
 
@@ -64,12 +81,48 @@ step "의존성 확인"
 VIRTUAL_ENV="$PWD/.venv" uv pip install --quiet -r requirements.txt
 echo "  준비됨"
 
+if [ "$LIST_MODELS" = 1 ]; then
+    .venv/bin/python - <<'PYTHON'
+import mlx_backend
+rows = [("torch", "PyTorch bf16 (원본)", "릴리스 가중치 그대로, MPS")]
+for model in mlx_backend.discover():
+    stages = "토큰 생성 + 합성" if "nar" in model["stages"] else "토큰 생성만"
+    rows.append((model["id"], model["label"], f"{stages} · {model['bytes'] / 2**30:.1f}GB"))
+width = max(len(row[0]) for row in rows)
+print()
+for identifier, label, detail in rows:
+    print(f"  {identifier:<{width}}  {label:<22} {detail}")
+print("\n  ./start --model <경로>   또는   ./start --torch")
+PYTHON
+    exit 0
+fi
+
 # ---------------------------------------------------------------- weights
 
 if [ "$MODELS" = 1 ]; then
     step "YuE2 가중치 확인 (YuE2-3B 7.26GB + YuE2-Vae 530MB)"
     echo "  이미 받아두었으면 즉시 넘어갑니다. 처음이면 시간이 걸립니다."
     .venv/bin/python download_models.py
+fi
+
+# Whether a converted model is usable is the loader's question, not a file
+# test: the server skips anything mlx_backend.available() rejects, so asking
+# anything else here can leave the two disagreeing.
+if [ "$BACKEND" = mlx ]; then
+    if ! .venv/bin/python -c 'import sys, mlx_backend; sys.exit(0 if mlx_backend.mlx_importable() else 1)'; then
+        warn "이 환경에는 mlx 를 설치할 수 없습니다 (Apple Silicon 전용). PyTorch 백엔드로 계속합니다."
+        BACKEND=torch
+    elif ! .venv/bin/python -c 'import sys, mlx_backend; sys.exit(0 if mlx_backend.available(sys.argv[1] or None) else 1)' "$MODEL"; then
+        if [ -n "$MODEL" ]; then
+            die "$MODEL 에 쓸 수 있는 변환본이 없습니다. mlx_convert.py --out $MODEL 로 만들거나 --model 없이 실행하세요."
+        fi
+        step "모델을 MLX 로 변환 (토큰 생성 8비트 / 합성 BF16, 4.9GB, 한 번만)"
+        echo "  변환은 20초 정도 걸립니다. 이후 실행에서는 건너뜁니다."
+        if ! .venv/bin/python mlx_convert.py; then
+            warn "변환에 실패했습니다. PyTorch 백엔드로 계속합니다."
+            BACKEND=torch
+        fi
+    fi
 fi
 
 if [ "$TRANSCRIPTION" = 1 ] && [ ! -x .venv-sheetsage/bin/python ]; then
@@ -80,6 +133,13 @@ fi
 # ---------------------------------------------------------------- run
 
 step "대시보드 시작"
+export YUE2_BACKEND="$BACKEND"
+if [ "$BACKEND" = mlx ]; then
+    [ -n "$MODEL" ] && export YUE2_MODEL="$MODEL"
+    echo "  모델: ${MODEL:-models/YuE2-3B-mlx-8bit} (토큰 생성·합성), VAE 디코드는 PyTorch"
+else
+    echo "  모델: PyTorch bf16 원본"
+fi
 URL="http://127.0.0.1:$PORT"
 echo "  $URL"
 echo "  종료하려면 Ctrl+C"

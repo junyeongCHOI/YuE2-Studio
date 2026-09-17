@@ -19,6 +19,9 @@
   .pill { font-size:12px; color:var(--muted); background:var(--panel-2);
           border:1px solid var(--line); border-radius:999px; padding:3px 10px; white-space:nowrap; }
   .pill b { color:var(--text); font-weight:600; }
+  .pill select { width:auto; font:inherit; font-size:12px; font-weight:600; color:var(--text);
+          background:transparent; border:none; border-radius:999px; padding:0 2px; cursor:pointer; }
+  .pill select:disabled { color:var(--muted); cursor:not-allowed; }
   .layout { display:grid; grid-template-columns:400px 1fr; gap:18px; padding:18px; align-items:start; }
   @media (max-width:980px) { .layout { grid-template-columns:1fr; } }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
@@ -129,12 +132,18 @@
   <span class="pill">device <b id="device">—</b></span>
   <span class="pill">queue <b id="queue">0</b></span>
   <span class="pill" id="model-pill">model <b id="model">idle</b></span>
+  <span class="pill" id="model-pill-select">모델 <select id="model-select" disabled onchange="selectModel(this.value)"></select></span>
   <span class="pill" id="ss-pill">전사 <b id="ss">—</b></span>
   <span class="hint" id="header-hint">?<span class="tip">
     <b>device</b> 는 추론 장치입니다. Apple Silicon 에서는 <code>mps</code> 가 선택되며,
     CUDA 그래프 없이 eager 디코딩이라 NVIDIA 대비 느립니다.<br><br>
     <b>model</b> 이 <code>warm</code> 이면 가중치가 메모리에 올라가 있어 다음 작업이
     바로 시작됩니다.<br><br>
+    <b>모델</b> 은 곡을 만드는 백엔드입니다. <code>MLX 8비트 (AR+NAR)</code> 면 토큰
+    생성과 오디오 합성이 모두 변환된 MLX 모델로 돌아 약 2.7배 빠릅니다. VAE 디코드는
+    어느 쪽이든 PyTorch 입니다. 대기열이 비어 있을 때만 바꿀 수 있고, 바꾸면 이전
+    모델은 메모리에서 내려갑니다. 터미널에서는 <code>./start --model &lt;경로&gt;</code>
+    나 <code>./start --backend torch</code> 로 고릅니다.<br><br>
     <b>전사</b> 는 SheetSage2 설치 여부입니다. 미설치라면
     <code>./setup_sheetsage.sh</code> 를 실행하세요.
   </span></span>
@@ -510,6 +519,39 @@ function scheduleRefresh() {
   searchTimer = setTimeout(refresh, 250);
 }
 
+// The selector is rebuilt only when the list or the selection changes, so the
+// poll loop cannot yank an open dropdown away mid-click.
+let modelSignature = null;
+
+function renderModels(state) {
+  const select = $("model-select");
+  const models = state.models || [];
+  const current = (state.backend || {}).id;
+  const signature = JSON.stringify([models.map(m => m.id), current]);
+  if (signature !== modelSignature) {
+    modelSignature = signature;
+    select.innerHTML = models.map(m =>
+      `<option value="${escapeHtml(m.id)}"${m.id === current ? " selected" : ""}>${escapeHtml(m.label)}</option>`
+    ).join("");
+  }
+  select.title = (models.find(m => m.id === current) || {}).detail || "";
+  select.disabled = Boolean(state.running) || state.queued > 0 || state.pipeline_loading;
+}
+
+async function selectModel(id) {
+  $("model-select").disabled = true;
+  try {
+    const response = await fetch("/api/models/select", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (!response.ok) alert((await response.json()).detail || "모델을 바꾸지 못했습니다");
+  } finally {
+    modelSignature = null;   // rebuild from whatever the server reports now
+    refresh();
+  }
+}
+
 async function refresh() {
   let state, library;
   const filter = $("filter").value;
@@ -530,6 +572,7 @@ async function refresh() {
     setText("queue", state.queued);
     setText("model", state.pipeline_error ? "error"
       : state.pipeline_loading ? "loading…" : state.pipeline_loaded ? "warm" : "idle");
+    renderModels(state);
     if (pipelineWarm !== Boolean(state.pipeline_loaded)) {
       pipelineWarm = Boolean(state.pipeline_loaded);
       estimate();

@@ -9,6 +9,9 @@ __pycache__/
 sheetsage2/
 *.whl
 
+# Converted weights (built by mlx_convert.py)
+models/
+
 # Generated takes, the library database and uploads
 outputs/
 *.db

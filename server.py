@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import re
 import shutil
 import threading
@@ -23,6 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from pydantic import BaseModel, Field
 
 import mastering
+import mlx_backend
 import sampling_guard
 import score as score_module
 import store as store_module
@@ -35,6 +37,27 @@ STORE = store_module.Store(ROOT / "outputs" / "library.db")
 
 # Installed at import so no code path can reach a decode without it.
 sampling_guard.install()
+
+# The converted MLX model runs the whole song except the VAE, and is the default
+# when one is present. Patching happens before the pipeline is built; the
+# dashboard can switch afterwards while the queue is idle.
+def select_startup_backend():
+    backend = os.environ.get("YUE2_BACKEND", "mlx").lower()
+    model = os.environ.get("YUE2_MODEL") or None
+    if backend == "torch":
+        return "torch"
+    if mlx_backend.use("mlx", model):
+        return "mlx"
+    where = mlx_backend.resolve(model)
+    reason = ("mlx 가 설치되어 있지 않습니다" if not mlx_backend.mlx_importable()
+              else f"변환된 모델이 없습니다 ({where})")
+    print(f"! MLX 백엔드를 쓸 수 없습니다 — {reason}.\n"
+          f"  .venv/bin/python mlx_convert.py 로 만들 수 있습니다. PyTorch 로 계속합니다.",
+          flush=True)
+    return "torch"
+
+
+select_startup_backend()
 
 JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
 
@@ -200,6 +223,41 @@ class Engine:
             with self.lock:
                 self.jobs[job.id] = job
                 self.order.append(job.id)
+
+    # -- backend ---------------------------------------------------------
+
+    def models(self):
+        """Every backend the dashboard can switch to, current one marked."""
+        current = mlx_backend.current()
+        rows = [{"id": mlx_backend.TORCH_ID, "backend": "torch", "label": "PyTorch bf16 (원본)",
+                 "stages": [], "bytes": None, "detail": "릴리스 가중치 그대로, MPS"}]
+        for model in mlx_backend.discover():
+            stages = "토큰 생성 + 합성" if "nar" in model["stages"] else "토큰 생성만"
+            rows.append({**model,
+                         "detail": f"{stages} · {model['bytes'] / 2**30:.1f}GB"})
+        for row in rows:
+            row["current"] = row["id"] == current["id"]
+        return rows
+
+    def set_backend(self, model_id):
+        """Switch models between jobs; refuses while anything is in flight."""
+        if model_id not in {row["id"] for row in self.models()}:
+            raise KeyError(model_id)
+        # The queue check and the patching have to be one atomic step: _run()
+        # claims a job under this same lock, so a job submitted between the two
+        # would otherwise start against half-swapped entry points. Patching is
+        # a handful of attribute assignments; no weights are loaded here.
+        with self.lock:
+            if self.current is not None or self.queue or self.loading:
+                raise ValueError("작업이 실행 중입니다. 끝난 뒤에 바꿀 수 있습니다")
+            if model_id == mlx_backend.TORCH_ID:
+                mlx_backend.use("torch")
+            elif not mlx_backend.use("mlx", model_id):
+                raise KeyError(model_id)
+            # Drop whatever the previous backend had resident; the VAE is shared.
+            if self.pipeline is not None:
+                self.pipeline._model = None
+        return self.models()
 
     # -- pipeline --------------------------------------------------------
 
@@ -577,6 +635,7 @@ class Engine:
             queued = len(self.queue)
         device = str(self.pipeline.device) if self.pipeline else None
         return {"device": device, "logit_guard": sampling_guard.installed(),
+                "backend": mlx_backend.current(), "models": self.models(),
                 "pipeline_loaded": self.pipeline is not None,
                 "pipeline_loading": self.loading, "pipeline_error": self.pipeline_error,
                 "queued": queued, "presets": sorted(mastering.PRESETS),
@@ -624,6 +683,26 @@ class GenerateRequest(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (ROOT / "static" / "index.html").read_text()
+
+
+@app.get("/api/models")
+def models():
+    """Backends this server can switch to without restarting."""
+    return {"models": engine.models()}
+
+
+class ModelSelect(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/api/models/select")
+def select_model(body: ModelSelect):
+    try:
+        return {"models": engine.set_backend(body.id)}
+    except ValueError as exc:      # something is running
+        raise HTTPException(409, str(exc))
+    except KeyError:
+        raise HTTPException(404, "알 수 없는 모델입니다")
 
 
 @app.get("/api/state")
