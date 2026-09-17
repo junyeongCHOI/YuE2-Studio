@@ -204,6 +204,7 @@ ODE 는 미세한 차이를 증폭하는 계산이라(64번의 속도 평가) �
 - **리믹스** — 오디오를 올리면 전사 후 이어서 생성, 또는 ABC 를 직접 입력
 - **진행률** — 단계별 실시간 표시, 토큰/초와 남은 시간
 - **라이브러리** — 검색, 제목·스타일·가사 수정, 메모, 즐겨찾기, 원본/마스터링본 전환 재생,
+  전사 항목은 올린 원본 녹음을 그대로 재생·다운로드,
   악보 보기, 마스터링 리포트, 프리셋 바꿔 다시 마스터링
 - 각 항목의 `?` 에 설명과 주의사항
 
@@ -288,6 +289,10 @@ SheetSage2 는 `torch==2.8` / `transformers==4.45` / `numpy<2` 를 요구해 yue
 공존할 수 없다. `.venv-sheetsage` 라는 별도 환경에 설치하고 서브프로세스로 호출하며,
 경계를 넘는 것은 ABC 텍스트뿐이다 (`transcribe.py`).
 
+올린 녹음은 `outputs/uploads/` 에 남아 전사 항목과 수명을 같이한다. 라이브러리에서
+그 항목의 플레이어가 재생하는 것이 이 원본이고, 항목을 지우면 원본도 함께 지워진다.
+악보가 원곡을 제대로 따라갔는지 들어보고 확인하라고 남겨둔 것이다.
+
 ## 마스터링
 
 모델이 아니라 numpy/scipy 신호처리다 (`mastering.py`).
@@ -367,7 +372,7 @@ CLI 에는 화음 검사가 없으므로 멜로디만 쓸 거라면 직접 확�
 | `POST` | `/api/jobs/{id}/retry` | 같은 요청 재제출 |
 | `POST` | `/api/jobs/{id}/upgrade?ode_steps=32&extend_to=` | 재합성, 선택적으로 연장 |
 | `POST` | `/api/jobs/{id}/master?preset=` | 다시 마스터링 |
-| `GET` | `/api/jobs/{id}/audio?variant=raw\|mastered` | 오디오 |
+| `GET` | `/api/jobs/{id}/audio?variant=raw\|mastered\|source` | 오디오 (`source` 는 전사에 쓴 업로드 원본) |
 | `GET` | `/api/jobs/{id}/abc` | 악보 |
 | `GET` | `/api/jobs/{id}/mastering` | 마스터링 리포트 |
 | `POST` | `/api/transcribe` | 오디오 업로드 → 전사 (`remix` 로 생성까지 연결) |

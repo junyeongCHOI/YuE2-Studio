@@ -953,11 +953,29 @@ def remaster(job_id: str, preset: str):
         raise HTTPException(404, "no such job, or it has no audio yet")
 
 
+def uploaded_source(job):
+    """The recording a transcription was made from.
+
+    It lives in outputs/uploads, not in the take's directory, and is removed
+    with the take. The path arrives back from SQLite, so it is confirmed to be
+    inside the uploads tree before anything is served from it.
+    """
+    upload = job.request.get("upload_path")
+    path = Path(upload).resolve() if upload else None
+    if path is None or path.parent.parent != UPLOADS.resolve() or not path.is_file():
+        raise HTTPException(404, "no uploaded source for this job")
+    media_type = transcribe_module.AUDIO_MEDIA_TYPES.get(path.suffix.lower(),
+                                                         "application/octet-stream")
+    return FileResponse(path, media_type=media_type, filename=f"{job.id}-source{path.suffix}")
+
+
 @app.get("/api/jobs/{job_id}/audio")
 def audio(job_id: str, variant: str = "mastered"):
     job = engine.jobs.get(job_id)
     if job is None:
         raise HTTPException(404, "no such job")
+    if variant == "source":
+        return uploaded_source(job)
     name = "audio.mastered.flac" if variant == "mastered" else "audio.flac"
     path = job.directory / name
     if not path.exists():

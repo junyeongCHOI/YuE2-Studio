@@ -13,7 +13,13 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 PYTHON = ROOT / ".venv-sheetsage" / "bin" / "python"
 INFER = ROOT / "sheetsage2" / "infer.py"
-AUDIO_SUFFIXES = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".aiff", ".aif"}
+# The formats the uploader accepts, with the media type a browser needs to play
+# them back: mimetypes guesses audio/mp4a-latm for .m4a and audio/x-flac for
+# .flac, neither of which <audio> will touch.
+AUDIO_MEDIA_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".flac": "audio/flac",
+                     ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg",
+                     ".opus": "audio/ogg", ".aiff": "audio/aiff", ".aif": "audio/aiff"}
+AUDIO_SUFFIXES = frozenset(AUDIO_MEDIA_TYPES)
 
 
 def available():

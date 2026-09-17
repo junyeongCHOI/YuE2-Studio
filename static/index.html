@@ -739,9 +739,17 @@ function renderJob(job) {
   const output = master ? master.output : null;
   const variant = audioState.get(job.id) ?? (master ? "mastered" : "raw");
 
+  // A transcription makes no audio of its own, but the recording it was made
+  // from is kept next to it and is the thing you want to hear against the score.
+  const sourceAudio = jobMode === "transcribe"
+    && (job.source_kind ?? request.source_kind) === "audio";
+
   const player = hasAudio ? `
       <audio controls preload="none" data-job="${job.id}"
-             src="/api/jobs/${job.id}/audio?variant=${variant}"></audio>` : "";
+             src="/api/jobs/${job.id}/audio?variant=${variant}"></audio>`
+    : sourceAudio ? `
+      <audio controls preload="none" data-job="${job.id}" onerror="sourceGone(this)"
+             src="/api/jobs/${job.id}/audio?variant=source"></audio>` : "";
 
   const audioActions = hasAudio ? `
         <select autocomplete="off" onchange="switchVariant('${job.id}', this.value)" ${master ? "" : "disabled"}>
@@ -776,7 +784,8 @@ function renderJob(job) {
         ${hasAudio ? `<div>길이<b>${fmtTime(job.audio_seconds ?? job.result?.audio_seconds)}</b></div>` : ""}
         <div>${jobMode === "transcribe" ? "전사 소요" : "생성 소요"}<b data-elapsed>${fmtTime(job.elapsed)}</b></div>
         ${jobMode === "transcribe"
-          ? `<div>원본<b>${escapeHtml(job.source_name ?? request.source_name ?? "—")}</b></div>
+          ? `<div>원본<b><a href="/api/jobs/${job.id}/audio?variant=source" download
+                >${escapeHtml(job.source_name ?? request.source_name ?? "—")}</a></b></div>
              ${job.result?.remix_job ? `<div>이어서<b>리믹스 대기열에 추가됨</b></div>` : ""}`
           : `<div>음질<b>ODE ${steps}${jobMode === "resynth" ? " · 재합성" : ""}</b></div>`}
         ${output ? `<div>LUFS<b>${fmtDb(output.lufs)}</b></div>
@@ -869,6 +878,14 @@ function toggleNotes(id) {
   openNotes.has(id) ? openNotes.delete(id) : openNotes.add(id);
   const notes = cards.get(id)?.element.querySelector(".notes");
   if (notes) notes.hidden = !openNotes.has(id);   // no re-render, no audio reset
+}
+
+/* The upload is deleted with its take; if it is already gone, say so quietly. */
+function sourceGone(element) {
+  const note = document.createElement("div");
+  note.className = "meta";
+  note.textContent = "업로드한 원본 파일이 더 이상 없습니다.";
+  element.replaceWith(note);
 }
 
 function switchVariant(id, variant) {
