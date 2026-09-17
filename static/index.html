@@ -291,6 +291,38 @@ We can dance until the morning shows</textarea>
         </div>
       </div>
 
+      <div class="row">
+        <div>
+          <label class="field-label" for="score-scale">악보 강도
+            <span class="hint">?<span class="tip">
+              악보를 얼마나 따라갈지입니다. 악보는 프롬프트에 그대로 들어가므로 원래는
+              가중치가 없고, 이 값이 <b>1.0</b> 이면 지금까지와 똑같이 동작합니다.<br><br>
+              1 이 아니면 악보를 뺀 프롬프트로 한 번 더 디코딩해서 그 차이에 이 값을
+              곱합니다 — <b>0</b> 은 악보를 무시하고 가사·스타일만, <b>0.5</b> 는 윤곽만 참고,
+              <b>1.5</b> 는 지금보다 더 붙습니다.<br><br>
+              실측(120스텝): 0.5 에서 분포가 KL 0.12 만큼 움직이고 최상위 토큰이 20% 바뀝니다.
+              0 에서는 KL 0.62, 38% 입니다. 1 보다 크면 외삽이라 과하면 무너집니다.<br><br>
+              <em>곡 생성 단계가 2배 느려집니다.</em> 악보 없이 만드는 <code>cot=off</code>
+              에서는 적용되지 않습니다.
+            </span></span>
+          </label>
+          <input id="score-scale" type="number" min="0" max="2" step="0.05" value="1">
+        </div>
+        <div>
+          <label class="field-label" for="cfg-scale">스타일 강도
+            <span class="hint">?<span class="tip">
+              태그·가사를 얼마나 밀어붙일지입니다 (상류의 <code>cfg_scale</code>).
+              <b>1.0</b> 이면 CFG 를 쓰지 않습니다.<br><br>
+              이쪽 네거티브 브랜치에는 <b>같은 악보가 그대로 들어갑니다</b>. 그래서 악보는
+              상쇄되고 태그·가사만 증폭됩니다 — 악보를 느슨하게 하고 싶다면 왼쪽 손잡이입니다.<br><br>
+              <em>곡 생성 단계가 2배 느려지고</em>, 두 손잡이를 같이 쓰면 브랜치가 셋이라
+              3배입니다.
+            </span></span>
+          </label>
+          <input id="cfg-scale" type="number" min="0" max="3" step="0.05" value="1">
+        </div>
+      </div>
+
       <label class="field-label" for="quality">음질
         <span class="hint">?<span class="tip">
           NAR 합성의 ODE 스텝 수입니다. <b>곡 자체가 아니라 오디오 해상도만</b> 바뀝니다 —
@@ -329,7 +361,9 @@ We can dance until the morning shows</textarea>
 
 <script>
 // Timings measured on M5 / MPS with eager decode; see README.
-const COST = {
+/* Measured on this machine, per backend: the dashboard's estimate is only
+   honest if it knows which one is generating. */
+const TORCH_COST = {
   semanticTokensPerAudioSecond: 25,   // 800 tokens produced 32 s of audio
   arTokensPerSecond: 17,              // semantic decode
   abcTokensPerSecond: 20,             // score planning decode
@@ -343,6 +377,22 @@ const COST = {
   transcribePerAudioSecond: 0.10,
   coldLoadSeconds: 7,
 };
+
+const MLX_COST = {
+  arTokensPerSecond: 45,              // 44.6 tok/s on the 8-bit conversion
+  abcTokensPerSecond: 47,             // 46.8 tok/s
+  narPerAudioSecondPerStep: 0.0158,   // 16.2 s at 32 steps for 32 s of audio
+  coldLoadSeconds: 2,                 // 4.9GB memory-mapped, not 6.8GB loaded
+};
+
+let COST = { ...TORCH_COST };
+
+function useBackendCost(backend) {
+  const wanted = backend === "mlx" ? { ...TORCH_COST, ...MLX_COST } : { ...TORCH_COST };
+  if (wanted.arTokensPerSecond === COST.arTokensPerSecond) return;
+  COST = wanted;
+  estimate();
+}
 
 const $ = id => document.getElementById(id);
 const fmtTime = s => {
@@ -467,6 +517,22 @@ function plannedLength() {
            sourceSeconds: file ? sourceAudioSeconds : null, abc, file };
 }
 
+/* Null means "leave it alone": the server only takes a branch when asked. */
+function guidanceScales() {
+  const read = (id, neutral) => {
+    const value = parseFloat($(id).value);
+    return !isFinite(value) || value === neutral ? null : value;
+  };
+  const score = $("cot").value === "off" ? null : read("score-scale", 1);
+  return { score, cfg: read("cfg-scale", 1) };
+}
+
+/* Each knob off its neutral value adds a branch, decoded in lockstep. */
+function guidanceBranches() {
+  const { score, cfg } = guidanceScales();
+  return 1 + (score !== null ? 1 : 0) + (cfg !== null ? 1 : 0);
+}
+
 function estimate() {
   const steps = parseInt($("quality").value, 10);
   const cot = $("cot").value;
@@ -485,7 +551,9 @@ function estimate() {
       * (cot === "melody" ? COST.melodyScoreFactor : 1));
     stages.push(["악보 계획", tokens / COST.abcTokensPerSecond]);
   }
-  stages.push(["곡 생성", audioSeconds * COST.semanticTokensPerAudioSecond / COST.arTokensPerSecond]);
+  const branches = guidanceBranches();
+  stages.push([branches > 1 ? `곡 생성 (브랜치 ${branches})` : "곡 생성",
+    branches * audioSeconds * COST.semanticTokensPerAudioSecond / COST.arTokensPerSecond]);
   stages.push([`합성 (ODE ${steps})`, audioSeconds * COST.narPerAudioSecondPerStep * steps]);
   stages.push(["오디오 디코드", audioSeconds * COST.vaePerAudioSecond]);
   if ($("preset").value && $("preset").value !== "none")
@@ -573,6 +641,7 @@ async function refresh() {
     setText("model", state.pipeline_error ? "error"
       : state.pipeline_loading ? "loading…" : state.pipeline_loaded ? "warm" : "idle");
     renderModels(state);
+    useBackendCost((state.backend || {}).backend);
     if (pipelineWarm !== Boolean(state.pipeline_loaded)) {
       pipelineWarm = Boolean(state.pipeline_loaded);
       estimate();
@@ -787,7 +856,11 @@ function renderJob(job) {
           ? `<div>원본<b><a href="/api/jobs/${job.id}/audio?variant=source" download
                 >${escapeHtml(job.source_name ?? request.source_name ?? "—")}</a></b></div>
              ${job.result?.remix_job ? `<div>이어서<b>리믹스 대기열에 추가됨</b></div>` : ""}`
-          : `<div>음질<b>ODE ${steps}${jobMode === "resynth" ? " · 재합성" : ""}</b></div>`}
+          : `<div>음질<b>ODE ${steps}${jobMode === "resynth" ? " · 재합성" : ""}</b></div>
+             ${request.score_scale != null && request.score_scale !== 1
+               ? `<div>악보 강도<b>${request.score_scale}</b></div>` : ""}
+             ${request.cfg_scale != null && request.cfg_scale !== 1
+               ? `<div>스타일 강도<b>${request.cfg_scale}</b></div>` : ""}`}
         ${output ? `<div>LUFS<b>${fmtDb(output.lufs)}</b></div>
           <div>트루피크<b>${fmtDb(output.true_peak_dbtp)} dBTP</b></div>
           <div>상관도<b>${fmtDb(output.correlation)}</b></div>` : ""}
@@ -1094,6 +1167,7 @@ $("form").addEventListener("submit", async event => {
     max_tokens: length ? parseInt(length, 10) : null, preset: $("preset").value,
     abc: abc || null, source_kind: abc ? "abc" : "prompt",
     strip_chords: Boolean(abc) && $("cot").value === "melody" && Boolean(abcAnalysis?.has_chords),
+    score_scale: guidanceScales().score, cfg_scale: guidanceScales().cfg,
   };
   // No score but a recording is loaded: transcribe, then chain into this remix.
   if (mode === "remix" && !abc) {
@@ -1127,7 +1201,15 @@ $("audio-file").addEventListener("change", async () => {
     estimate();
   }
 });
-for (const id of ["cot", "preset", "max-seconds"]) $(id).addEventListener("change", estimate);
+for (const id of ["cot", "preset", "max-seconds", "score-scale", "cfg-scale"])
+  $(id).addEventListener("change", estimate);
+for (const id of ["score-scale", "cfg-scale"]) $(id).addEventListener("input", estimate);
+$("cot").addEventListener("change", () => {
+  // Without a score there is nothing to weight; say so instead of charging for it.
+  const off = $("cot").value === "off";
+  $("score-scale").disabled = off;
+  $("score-scale").title = off ? "cot=off 에는 악보가 없어 적용되지 않습니다" : "";
+});
 $("cot").addEventListener("change", analyseScore);
 
 setMode("compose");

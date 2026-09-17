@@ -23,6 +23,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+import guidance
 import mastering
 import mlx_backend
 import sampling_guard
@@ -504,7 +505,12 @@ class Engine:
                                      seed=int(request.get("seed", 831001)),
                                      cfg_scale=request.get("cfg_scale"),
                                      abc=(request.get("abc") or None))
+        score_scale = guidance.effective_scale(song_request.cot, request.get("score_scale"))
         config = pipe.effective_config(song_request, None, sampling)
+        # Recorded only when it is in play, so takes made without it keep the
+        # identity they would have had.
+        if score_scale != guidance.DEFAULT_SCORE_SCALE:
+            config["score_scale"] = score_scale
         request_identity = identity({"request": song_request.to_dict(), "config": config,
                                      "weights": pipe.weights})
 
@@ -513,7 +519,10 @@ class Engine:
 
         start = time.perf_counter()
         plan = pipe.plan(request=song_request, cancelled=cancelled)
-        semantic = pipe.generate_semantic(plan, sampling=sampling, cancelled=cancelled)
+        semantic = (guidance.generate_semantic(pipe, plan, sampling=sampling,
+                                               score_scale=score_scale, cancelled=cancelled)
+                    if score_scale != guidance.DEFAULT_SCORE_SCALE
+                    else pipe.generate_semantic(plan, sampling=sampling, cancelled=cancelled))
         nar_start = time.perf_counter()
         latents = pipe.synthesize(semantic, cancelled=cancelled)
         nar_seconds = time.perf_counter() - nar_start
@@ -525,15 +534,42 @@ class Engine:
         return SongResult(audio, 48000, semantic, latents, config, pipe.weights,
                           timing, request_identity)
 
-    def _extend_semantic(self, pipe, plan, existing, target, cancelled):
+    def _extend_with_guidance(self, pipe, plan, existing, target, cancelled, score_scale):
+        """The continuation, with the score's guidance branch in play."""
+        from yue2.protocol import CODEC_OFFSET, CONTEXT, resolve_sampling
+
+        request = plan.request
+        prefixes, cfg_scale, score_scale = guidance.continuation_prefixes(
+            pipe, plan, existing, score_scale=score_scale)
+        room = CONTEXT - max(len(prefix) for prefix in prefixes)
+        remaining = min(int(target) - len(existing), room)
+        if remaining <= 0:
+            return existing, {"output_tokens": len(existing), "reused": True}, room <= 0
+
+        sampling = resolve_sampling({"max_tokens": remaining, "min_tokens": 0},
+                                    pipe.generation_config.semantic)
+        decoder, execution = guidance.decoder_for(pipe)
+        with pipe._status("Extending song", unit="tokens") as status:
+            observed = (lambda phase, token: status.advance()) if pipe.progress else None
+            ids, timing, truncated = guidance.generate(
+                decoder, prefixes, sampling, request.seed, "semantic", cfg_scale=cfg_scale,
+                score_scale=score_scale, legacy_off=request.cot == "off",
+                cancelled=cancelled, on_token=observed, execution=execution)
+        timing = dict(timing, reused_tokens=len(existing))
+        return existing + [int(t) - CODEC_OFFSET for t in ids], timing, truncated
+
+    def _extend_semantic(self, pipe, plan, existing, target, cancelled,
+                         score_scale=guidance.DEFAULT_SCORE_SCALE):
         """Continue the autoregressive decode from tokens that already exist.
 
         Appending the existing codec tokens to the prefix puts the model in the
-        state an uninterrupted pass would have been in. The CFG branch gets the
-        same treatment, since both branches accumulate every sampled token.
+        state an uninterrupted pass would have been in. Every guidance branch
+        gets the same treatment, since each accumulates every sampled token.
 
         Existing tokens are reused verbatim; what follows is new music.
         """
+        if score_scale != guidance.DEFAULT_SCORE_SCALE:
+            return self._extend_with_guidance(pipe, plan, existing, target, cancelled, score_scale)
         from yue2.sampling import generate_tokens
         from yue2.protocol import CODEC_OFFSET, CONTEXT, negative_prefix, resolve_sampling
 
@@ -584,15 +620,19 @@ class Engine:
         def cancelled():
             return job.cancel_requested
 
+        # The knob belongs to the take being continued, not to the resynth request.
+        score_scale = guidance.effective_scale(plan.request.cot, source.request.get("score_scale"))
         target = job.request.get("extend_to")
         if target and int(target) > len(existing):
             tokens, semantic_timing, truncated = self._extend_semantic(
-                pipe, plan, existing, int(target), cancelled)
+                pipe, plan, existing, int(target), cancelled, score_scale)
         else:
             tokens, semantic_timing, truncated = existing, {"output_tokens": len(existing),
                                                             "reused": True}, False
         semantic = SemanticResult(plan, tokens, semantic_timing, truncated)
         config = pipe.effective_config(plan.request)
+        if score_scale != guidance.DEFAULT_SCORE_SCALE:
+            config["score_scale"] = score_scale
         request_identity = identity({"request": plan.request.to_dict(), "config": config,
                                      "weights": pipe.weights})
 
@@ -673,7 +713,8 @@ class GenerateRequest(BaseModel):
     source_name: str | None = None    # the file a transcribed score came from
     cot: str = "full"
     seed: int = 831001
-    cfg_scale: float | None = None
+    cfg_scale: float | None = None          # how hard tags/lyrics push
+    score_scale: float | None = Field(default=None, ge=0, le=5)   # how hard the ABC does
     max_tokens: int | None = Field(default=None, ge=200, le=9000)
     ode_steps: int = Field(default=32, ge=2, le=64)
     preset: str = "streaming"
