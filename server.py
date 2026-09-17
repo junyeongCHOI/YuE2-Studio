@@ -1,11 +1,13 @@
 """Local dashboard for YuE2 on Apple Silicon.
 
-One process holds a warm pipeline and runs jobs one at a time; FastAPI serves
-the queue, the library and the mastering chain to a single-page UI.
+One process runs jobs one at a time, holding the model weights in memory only
+while generation work is queued; FastAPI serves the queue, the library and the
+mastering chain to a single-page UI.
 """
 from __future__ import annotations
 
 import dataclasses
+import gc
 import json
 import os
 import re
@@ -202,6 +204,7 @@ class Engine:
         self.lock = threading.Lock()
         self.wakeup = threading.Condition(self.lock)
         self.pipeline = None
+        self.pipeline_source = None    # the model directory the pipeline was built on
         self.pipeline_error = None
         self.loading = False
         self.current = None
@@ -230,9 +233,16 @@ class Engine:
     def models(self):
         """Every backend the dashboard can switch to, current one marked."""
         current = mlx_backend.current()
-        rows = [{"id": mlx_backend.TORCH_ID, "backend": "torch", "label": "PyTorch bf16 (원본)",
-                 "stages": [], "bytes": None, "detail": "릴리스 가중치 그대로, MPS"}]
+        # Without the released weights, offering a backend that needs them would
+        # turn a click into a 7GB download on the next job.
+        original = mlx_backend.torch_available()
+        rows = []
+        if original or current["id"] == mlx_backend.TORCH_ID:
+            rows.append({"id": mlx_backend.TORCH_ID, "backend": "torch", "label": "PyTorch bf16 (원본)",
+                         "stages": [], "bytes": None, "detail": "릴리스 가중치 그대로, MPS"})
         for model in mlx_backend.discover():
+            if not original and "nar" not in model["stages"] and model["id"] != current["id"]:
+                continue
             stages = "토큰 생성 + 합성" if "nar" in model["stages"] else "토큰 생성만"
             rows.append({**model,
                          "detail": f"{stages} · {model['bytes'] / 2**30:.1f}GB"})
@@ -255,21 +265,30 @@ class Engine:
                 mlx_backend.use("torch")
             elif not mlx_backend.use("mlx", model_id):
                 raise KeyError(model_id)
-            # Drop whatever the previous backend had resident; the VAE is shared.
-            if self.pipeline is not None:
-                self.pipeline._model = None
+            self._release_weights()
         return self.models()
 
     # -- pipeline --------------------------------------------------------
 
     def _ensure_pipeline(self):
-        if self.pipeline is not None:
+        """The pipeline for the current backend, built on first use.
+
+        Building it loads no weights -- only the tokenizer and the checksums the
+        takes record -- so it outlives _release_weights(). A self-contained MLX
+        conversion is built on directly, which keeps the released checkpoint out
+        of the MLX path altogether; torch and AR-only conversions still need it.
+        """
+        directory = mlx_backend.pipeline_dir()
+        source = str(directory) if directory else mlx_backend.TORCH_REPO
+        if self.pipeline is not None and self.pipeline_source == source:
             return self.pipeline
         from yue2 import YuE2Pipeline
         self.loading = True
         try:
+            self.pipeline, self.pipeline_source = None, None
             self.pipeline = YuE2Pipeline.from_pretrained(
-                "m-a-p/YuE2-3B", vae="m-a-p/YuE2-Vae", device="auto", progress=True)
+                source, vae="m-a-p/YuE2-Vae", device="auto", progress=True)
+            self.pipeline_source = source
             self.pipeline_error = None
         except Exception as exc:  # surfaced in /api/state
             self.pipeline_error = f"{type(exc).__name__}: {exc}"
@@ -277,6 +296,26 @@ class Engine:
         finally:
             self.loading = False
         return self.pipeline
+
+    def _release_weights(self):
+        """Return the model weights' memory; the next generation loads them again."""
+        pipe = self.pipeline
+        if pipe is not None:
+            pipe._model, pipe._vae = None, None
+        mlx_backend.release()
+        gc.collect()
+        if pipe is not None and pipe.device.type == "mps":
+            import torch
+            torch.mps.empty_cache()
+
+    def weights_resident(self):
+        pipe = self.pipeline
+        return (mlx_backend.loaded()
+                or (pipe is not None and (pipe._model is not None or pipe._vae is not None)))
+
+    def _needs_weights_next(self):
+        """Whether the job about to be claimed will generate. Call under self.lock."""
+        return bool(self.queue) and self.jobs[self.queue[0]].request.get("mode") != "transcribe"
 
     @contextmanager
     def _tracking(self, job):
@@ -388,6 +427,16 @@ class Engine:
             finally:
                 job.finished_at = time.time()
                 job.persist()
+                # Weights stay resident across a run of generation jobs and go
+                # when the queue drains or hands over to a transcription, which
+                # loads its own models in a subprocess.
+                with self.lock:
+                    keep = self._needs_weights_next()
+                if not keep:
+                    try:
+                        self._release_weights()
+                    except Exception:
+                        traceback.print_exc()
                 self.current = None
 
     @contextmanager
@@ -462,7 +511,8 @@ class Engine:
         try:
             result = transcribe_module.transcribe(
                 source, job.directory, melody_only=bool(request.get("melody_only")),
-                max_seconds=request.get("max_seconds"), on_line=on_line)
+                max_seconds=request.get("max_seconds"), on_line=on_line,
+                cancelled=lambda: job.cancel_requested)
         finally:
             job.end_stage()
 
@@ -676,7 +726,7 @@ class Engine:
         device = str(self.pipeline.device) if self.pipeline else None
         return {"device": device, "logit_guard": sampling_guard.installed(),
                 "backend": mlx_backend.current(), "models": self.models(),
-                "pipeline_loaded": self.pipeline is not None,
+                "pipeline_loaded": self.weights_resident(),
                 "pipeline_loading": self.loading, "pipeline_error": self.pipeline_error,
                 "queued": queued, "presets": sorted(mastering.PRESETS),
                 "running": current.id if current else None, "jobs": jobs}

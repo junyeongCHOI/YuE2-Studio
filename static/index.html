@@ -3,16 +3,56 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>YuE2 Studio</title>
+<script>
+  /* Applied before the first paint so a chosen theme never flashes the other one. */
+  try {
+    const theme = localStorage.getItem("yue2.theme");
+    if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  } catch { /* storage refused: follow the system */ }
+</script>
 <style>
+  /* Colour tokens. Dark follows the Material dark theme (#121212 base, lighter
+     surfaces for elevation, desaturated accents); light uses the matching
+     Google palette. Every text pair clears WCAG 1.4.3 (4.5:1) and every control
+     border, focus ring and state icon clears 1.4.11 (3:1) against the surfaces
+     it sits on -- change a value only after re-checking those pairs.
+     --line is decorative (cards, dividers); --field-line bounds form controls. */
   :root {
-    --bg:#0f1115; --panel:#171a21; --panel-2:#1d212a; --line:#272c37;
-    --text:#e6e9ef; --muted:#8b93a7; --accent:#6ea8fe; --ok:#4ade80;
-    --warn:#fbbf24; --bad:#f87171; --star:#fbbf24; --radius:10px;
+    color-scheme:light;
+    --bg:#F6F7F8; --panel:#FFFFFF; --panel-2:#F1F3F4; --hover:#E8EAED; --line:#DADCE0;
+    --field-line:#80868B; --text:#202124; --muted:#5F6368;
+    --accent:#1967D2; --accent-hover:#185ABC; --on-accent:#FFFFFF;
+    --ok:#137333; --warn:#A0550A; --bad:#C5221F; --star:#B06000;
+    --shadow:0 6px 24px rgba(60,64,67,.28);
+    --radius:10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme:dark;
+      --bg:#121212; --panel:#1E1E1E; --panel-2:#272727; --hover:#333333; --line:#383838;
+      --field-line:#7A7A7A; --text:#E3E3E3; --muted:#A8A8A8;
+      --accent:#8AB4F8; --accent-hover:#AECBFA; --on-accent:#202124;
+      --ok:#81C995; --warn:#FDD663; --bad:#F28B82; --star:#FDD663;
+      --shadow:0 10px 30px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme:dark;
+    --bg:#121212; --panel:#1E1E1E; --panel-2:#272727; --hover:#333333; --line:#383838;
+    --field-line:#7A7A7A; --text:#E3E3E3; --muted:#A8A8A8;
+    --accent:#8AB4F8; --accent-hover:#AECBFA; --on-accent:#202124;
+    --ok:#81C995; --warn:#FDD663; --bad:#F28B82; --star:#FDD663;
+    --shadow:0 10px 30px rgba(0,0,0,.6);
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
          font:14px/1.5 ui-sans-serif,-apple-system,"SF Pro Text",system-ui,sans-serif; }
+  a { color:var(--accent); text-underline-offset:2px; }
+  :focus { outline:none; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  ::placeholder { color:var(--muted); opacity:1; }
   header { display:flex; align-items:center; gap:12px; padding:14px 20px; flex-wrap:wrap;
            border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:20; }
   header h1 { font-size:15px; margin:0; font-weight:650; letter-spacing:.2px; }
@@ -22,55 +62,65 @@
   .pill select { width:auto; font:inherit; font-size:12px; font-weight:600; color:var(--text);
           background:transparent; border:none; border-radius:999px; padding:0 2px; cursor:pointer; }
   .pill select:disabled { color:var(--muted); cursor:not-allowed; }
+  .pill select:focus-visible { outline-offset:3px; }
+  .theme-pill { margin-left:auto; }
   .layout { display:grid; grid-template-columns:400px 1fr; gap:18px; padding:18px; align-items:start; }
-  @media (max-width:980px) { .layout { grid-template-columns:1fr; } }
+  @media (max-width:980px) { .layout { grid-template-columns:1fr; } .theme-pill { margin-left:0; } }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
   label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
   input,select,textarea,button { font:inherit; color:var(--text); background:var(--panel-2);
-        border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; }
+        border:1px solid var(--field-line); border-radius:8px; padding:8px 10px; width:100%; }
   textarea { resize:vertical; min-height:110px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; }
   input[type=file] { padding:6px; font-size:12px; }
-  input:focus,select:focus,textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  input[type=checkbox] { accent-color:var(--accent); }
+  input:focus-visible,select:focus-visible,textarea:focus-visible { outline-offset:1px; }
   .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  button { cursor:pointer; background:var(--accent); color:#0b1220; border:none; font-weight:650; }
-  button:hover:not(:disabled) { filter:brightness(1.08); }
+  button { cursor:pointer; background:var(--accent); color:var(--on-accent); border:1px solid transparent; font-weight:650; }
+  button:hover:not(:disabled) { background:var(--accent-hover); }
   button:disabled { opacity:.5; cursor:not-allowed; }
-  button.ghost { background:var(--panel-2); color:var(--text); border:1px solid var(--line); font-weight:500; }
-  button.danger { background:var(--panel-2); color:var(--bad); border:1px solid var(--line); font-weight:500; }
+  button.ghost,.button-link { background:var(--panel-2); color:var(--text); border:1px solid var(--field-line); font-weight:500; }
+  button.danger { background:var(--panel-2); color:var(--bad); border:1px solid var(--field-line); font-weight:500; }
+  button.ghost:hover:not(:disabled),button.danger:hover:not(:disabled),.button-link:hover { background:var(--hover); }
+  .button-link { display:inline-block; border-radius:8px; padding:6px 12px; font-size:12.5px;
+                 text-decoration:none; white-space:nowrap; }
   .submit { margin-top:16px; padding:11px; }
   .tabs { display:flex; gap:6px; background:var(--panel-2); border:1px solid var(--line);
           border-radius:9px; padding:4px; margin-bottom:6px; }
-  .tabs button { background:transparent; border:none; color:var(--muted); font-weight:600;
+  .tabs button { background:transparent; border:1px solid transparent; color:var(--muted); font-weight:600;
                  padding:7px 10px; border-radius:6px; font-size:13px; }
-  .tabs button.on { background:var(--accent); color:#0b1220; }
+  .tabs button:hover:not(.on) { background:var(--hover); color:var(--text); }
+  .tabs button.on { background:var(--accent); color:var(--on-accent); }
 
-  /* Field help, shown on hover. */
-  .hint { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
-          border-radius:50%; border:1px solid var(--line); color:var(--muted); font-size:10px;
+  /* Field help: shown on hover and on keyboard focus, dismissed with Escape. */
+  .hint { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px;
+          border-radius:50%; border:1px solid var(--muted); color:var(--muted); font-size:10px;
           cursor:help; position:relative; vertical-align:middle; margin-left:5px; font-weight:700;
           flex:none; user-select:none; }
+  .hint::before { content:""; position:absolute; inset:-5px; }   /* 26px pointer target */
   .hint:hover { color:var(--accent); border-color:var(--accent); }
   .hint .tip { display:none; position:fixed; width:min(300px, calc(100vw - 24px));
                max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain;
                background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
                padding:10px 12px; font-size:12px; line-height:1.65; color:var(--text); z-index:60;
-               box-shadow:0 10px 30px rgba(0,0,0,.55); text-align:left; font-weight:400;
+               box-shadow:var(--shadow); text-align:left; font-weight:400;
                cursor:auto; white-space:normal; }
-  .hint:hover .tip, .hint.open .tip { display:block; }
-  .hint.warn { color:var(--warn); border-color:#5a4a1e; }
+  .hint:hover .tip, .hint:focus-visible .tip, .hint.open .tip { display:block; }
+  .hint[data-dismissed] .tip { display:none; }
+  .hint.warn { color:var(--warn); border-color:var(--warn); }
   .hint .tip b { color:var(--text); }
   .hint .tip code { background:var(--bg); padding:1px 4px; border-radius:4px; font-size:11.5px; }
   .hint .tip em { color:var(--warn); font-style:normal; }
 
   .job { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
          padding:14px 16px; margin-bottom:12px; }
-  .job.fav { border-color:#5a4a1e; }
+  .job.fav { border-color:color-mix(in srgb, var(--star) 50%, var(--line)); }
   .job-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .job-title { font-weight:600; flex:1; min-width:150px; background:transparent; border:1px solid transparent;
                padding:3px 6px; border-radius:6px; width:auto; }
-  .job-title:hover { border-color:var(--line); }
-  .star { width:auto; background:transparent; border:none; font-size:16px; padding:2px 4px;
-          color:var(--line); line-height:1; }
+  .job-title:hover { border-color:var(--field-line); }
+  .star { width:auto; background:transparent; border:1px solid transparent; font-size:16px; padding:2px 4px;
+          color:var(--muted); line-height:1; }
+  .star:hover:not(:disabled) { background:var(--hover); }
   .star.on { color:var(--star); }
   .status { font-size:11px; padding:2px 9px; border-radius:999px; border:1px solid var(--line);
             text-transform:uppercase; letter-spacing:.5px; font-weight:650; }
@@ -96,7 +146,8 @@
                          background:var(--accent); border-radius:999px;
                          animation:slide 1.4s ease-in-out infinite; }
   .busy-bar > span { font-size:12px; color:var(--accent); white-space:nowrap; }
-  .job.busy .actions { opacity:.45; }
+  /* Controls are disabled while busy (dimmed by :disabled); the link has no such state. */
+  .job.busy .actions .button-link { opacity:.5; pointer-events:none; }
   .actions { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
   .actions select,.actions button,.actions a { width:auto; }
   .actions select,.actions button { padding:6px 12px; font-size:12.5px; }
@@ -124,6 +175,22 @@
   .check input { width:auto; }
   .check label { margin:0; color:var(--text); font-size:12.5px; }
   .field-label { display:flex; align-items:center; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+             clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration:0s !important; animation-iteration-count:1 !important;
+                             transition:none !important; }
+    /* A frozen stripe would read as stalled progress; show a static full track instead. */
+    .bar.indeterminate > i, .busy-bar > i::after { width:100% !important; margin-left:0; opacity:.6; }
+  }
+  /* Windows high contrast and similar: system colours replace ours, so state
+     that was carried by a fill needs an outline to survive. */
+  @media (forced-colors: active) {
+    .tabs button.on { outline:2px solid Highlight; }
+    .bar > i, .busy-bar > i::after { background:Highlight; }
+    .hint { border-color:CanvasText; }
+  }
 </style>
 </head>
 <body>
@@ -132,13 +199,15 @@
   <span class="pill">device <b id="device">—</b></span>
   <span class="pill">queue <b id="queue">0</b></span>
   <span class="pill" id="model-pill">model <b id="model">idle</b></span>
-  <span class="pill" id="model-pill-select">모델 <select id="model-select" disabled onchange="selectModel(this.value)"></select></span>
+  <span class="pill" id="model-pill-select">모델 <select id="model-select" aria-label="모델" disabled onchange="selectModel(this.value)"></select></span>
   <span class="pill" id="ss-pill">전사 <b id="ss">—</b></span>
   <span class="hint" id="header-hint">?<span class="tip">
     <b>device</b> 는 추론 장치입니다. Apple Silicon 에서는 <code>mps</code> 가 선택되며,
     CUDA 그래프 없이 eager 디코딩이라 NVIDIA 대비 느립니다.<br><br>
     <b>model</b> 이 <code>warm</code> 이면 가중치가 메모리에 올라가 있어 다음 작업이
-    바로 시작됩니다.<br><br>
+    바로 시작됩니다. 가중치는 곡을 만드는 동안에만 올라가 있고, 대기열이 비거나 전사
+    차례가 되면 내려갑니다(<code>idle</code>). 전사 모델은 작업마다 따로 떴다가 끝나면
+    내려갑니다.<br><br>
     <b>모델</b> 은 곡을 만드는 백엔드입니다. <code>MLX 8비트 (AR+NAR)</code> 면 토큰
     생성과 오디오 합성이 모두 변환된 MLX 모델로 돌아 약 2.7배 빠릅니다. VAE 디코드는
     어느 쪽이든 PyTorch 입니다. 대기열이 비어 있을 때만 바꿀 수 있고, 바꾸면 이전
@@ -147,13 +216,18 @@
     <b>전사</b> 는 SheetSage2 설치 여부입니다. 미설치라면
     <code>./setup_sheetsage.sh</code> 를 실행하세요.
   </span></span>
+  <span class="pill theme-pill">테마 <select id="theme-select" aria-label="테마" onchange="setTheme(this.value)">
+    <option value="system">시스템</option>
+    <option value="light">라이트</option>
+    <option value="dark">다크</option>
+  </select></span>
 </header>
 
 <div class="layout">
   <div class="card">
     <div class="tabs">
-      <button type="button" id="tab-compose" class="on" onclick="setMode('compose')">새 곡</button>
-      <button type="button" id="tab-remix" onclick="setMode('remix')">리믹스</button>
+      <button type="button" id="tab-compose" class="on" aria-pressed="true" onclick="setMode('compose')">새 곡</button>
+      <button type="button" id="tab-remix" aria-pressed="false" onclick="setMode('remix')">리믹스</button>
     </div>
 
     <div id="remix-source" style="display:none">
@@ -385,12 +459,23 @@ const MLX_COST = {
   coldLoadSeconds: 2,                 // 4.9GB memory-mapped, not 6.8GB loaded
 };
 
-let COST = { ...TORCH_COST };
+/* Transcription by where SheetSage2 runs (/api/transcription's device; see
+   transcribe.py). Every window is 300 s whatever the clip, so the fixed part
+   dominates. Measured on an 8GB M2 with a 15 s clip and a 253 s song. */
+const TRANSCRIBE_COST = {
+  cpu: { transcribeFixed: 38, transcribePerAudioSecond: 0.2 },    // 41 s, 88 s
+  mlx: { transcribeFixed: 15, transcribePerAudioSecond: 0.18 },   // 17.5 s, 61 s: MLX encoder, CPU decoder
+};
 
-function useBackendCost(backend) {
-  const wanted = backend === "mlx" ? { ...TORCH_COST, ...MLX_COST } : { ...TORCH_COST };
-  if (wanted.arTokensPerSecond === COST.arTokensPerSecond) return;
-  COST = wanted;
+let COST = { ...TORCH_COST };
+let backendCost = "torch", transcribeDevice = "mps", costKey = "torch|mps";
+
+function useBackendCost(backend = backendCost, device = transcribeDevice) {
+  [backendCost, transcribeDevice] = [backend, device];
+  if (`${backend}|${device}` === costKey) return;
+  costKey = `${backend}|${device}`;
+  COST = { ...TORCH_COST, ...(backend === "mlx" ? MLX_COST : {}),
+           ...(TRANSCRIBE_COST[device] || {}) };
   estimate();
 }
 
@@ -478,6 +563,67 @@ document.addEventListener("mouseover", event => {
   if (hint && !hint.contains(event.relatedTarget)) placeTip(hint);
 });
 
+/* The same help has to reach the keyboard and screen readers: each hint becomes a
+   focusable button described by its tip. Hints arrive with every card render, so
+   they are wired as they appear rather than once at load. */
+let tipCount = 0;
+function wireHints(root) {
+  const hints = [...root.querySelectorAll(".hint:not([tabindex])")];
+  if (root.matches?.(".hint:not([tabindex])")) hints.push(root);
+  for (const hint of hints) {
+    const tip = hint.querySelector(".tip");
+    if (!tip) continue;
+    tip.id ||= `tip-${++tipCount}`;
+    tip.setAttribute("role", "tooltip");
+    hint.tabIndex = 0;
+    hint.setAttribute("role", "button");
+    hint.setAttribute("aria-label", hint.classList.contains("warn") ? "주의" : "도움말");
+    hint.setAttribute("aria-describedby", tip.id);
+  }
+}
+wireHints(document);
+new MutationObserver(records => {
+  for (const record of records)
+    for (const node of record.addedNodes)
+      if (node.nodeType === Node.ELEMENT_NODE) wireHints(node);
+}).observe(document.body, { childList: true, subtree: true });
+
+document.addEventListener("focusin", event => {
+  if (event.target.matches?.(".hint")) placeTip(event.target);
+});
+// WCAG 1.4.13: a tip that covers content must be dismissable without moving away.
+document.addEventListener("keydown", event => {
+  const hint = event.target.matches?.(".hint") ? event.target : null;
+  if (hint && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();   // a hint sits inside a <label>; do not jump to its field
+    if ("dismissed" in hint.dataset) { delete hint.dataset.dismissed; placeTip(hint); }
+    else hint.dataset.dismissed = "";
+    return;
+  }
+  if (event.key !== "Escape") return;
+  for (const hint of document.querySelectorAll(".hint:hover, .hint:focus-visible"))
+    hint.dataset.dismissed = "";
+});
+const undismiss = event => {
+  const hint = event.target.closest?.(".hint");
+  if (hint && !hint.contains(event.relatedTarget)) delete hint.dataset.dismissed;
+};
+document.addEventListener("mouseout", undismiss);
+document.addEventListener("focusout", undismiss);
+
+/* Theme: "system" follows prefers-color-scheme; the others pin one. The choice
+   is applied in <head> before paint and only mirrored here. */
+const THEME_KEY = "yue2.theme";
+function setTheme(theme) {
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+  try {
+    if (theme === "light" || theme === "dark") localStorage.setItem(THEME_KEY, theme);
+    else localStorage.removeItem(THEME_KEY);
+  } catch { /* refused: the choice lasts for this visit */ }
+}
+$("theme-select").value = document.documentElement.dataset.theme || "system";
+
 function errorSummary(text) {
   const lines = String(text).trim().split("\n").filter(line => line.trim());
   return lines[lines.length - 1] || "알 수 없는 오류";
@@ -510,6 +656,8 @@ function setMode(next) {
   mode = next;
   $("tab-compose").classList.toggle("on", next === "compose");
   $("tab-remix").classList.toggle("on", next === "remix");
+  $("tab-compose").setAttribute("aria-pressed", String(next === "compose"));
+  $("tab-remix").setAttribute("aria-pressed", String(next === "remix"));
   $("remix-source").style.display = next === "remix" ? "" : "none";
   $("submit").textContent = submitLabel();
   $("style-tip").innerHTML = next === "remix"
@@ -698,7 +846,10 @@ async function refresh() {
     }
     if ($("ss").textContent === "—")
       fetch("/api/transcription").then(r => r.json())
-        .then(d => setText("ss", d.available ? "사용 가능" : "미설치"));
+        .then(d => {
+          setText("ss", d.available ? "사용 가능" : "미설치");
+          useBackendCost(undefined, d.device);
+        });
 
     // /api/state is the live queue only; finished takes come from SQLite.
     const live = new Map(state.jobs.map(j => [j.id, j]));
@@ -877,8 +1028,7 @@ function renderJob(job) {
         ${wasCut
           ? `<button onclick="upgrade('${job.id}', true)">이어서 풀버전으로${steps < 32 ? " (고음질)" : ""}</button>`
           : steps < 32 ? `<button onclick="upgrade('${job.id}')">이 곡 그대로 고음질로</button>` : ""}
-        <a href="/api/jobs/${job.id}/audio?variant=${variant}" download>
-          <button class="ghost" type="button">다운로드</button></a>` : "";
+        <a class="button-link" href="/api/jobs/${job.id}/audio?variant=${variant}" download>다운로드</a>` : "";
 
   // A failed take still has a request worth reading.
   const commonActions = terminal ? `
@@ -933,9 +1083,10 @@ function renderJob(job) {
   return `
     <div class="job ${job.favorite ? "fav" : ""}">
       <div class="job-head">
-        <button class="star ${job.favorite ? "on" : ""}" title="즐겨찾기"
+        <button class="star ${job.favorite ? "on" : ""}" title="즐겨찾기" aria-label="즐겨찾기"
+                aria-pressed="${Boolean(job.favorite)}"
                 onclick="toggleFavorite('${job.id}', ${!job.favorite})">${job.favorite ? "★" : "☆"}</button>
-        <input class="job-title" value="${escapeHtml(title || style.slice(0, 40) || job.id)}"
+        <input class="job-title" aria-label="제목" value="${escapeHtml(title || style.slice(0, 40) || job.id)}"
                onchange="rename('${job.id}', this.value)">
         ${kindLabel ? `<span class="kind">${kindLabel}</span>` : ""}
         ${job.result?.logit_repairs ? `<span class="hint warn">!<span class="tip">
@@ -1063,6 +1214,10 @@ function patchBusy(element, id) {
   }
   for (const control of element.querySelectorAll(".actions button, .actions select"))
     control.disabled = Boolean(label);
+  for (const link of element.querySelectorAll(".actions .button-link")) {
+    if (label) { link.setAttribute("aria-disabled", "true"); link.tabIndex = -1; }
+    else { link.removeAttribute("aria-disabled"); link.removeAttribute("tabindex"); }
+  }
 }
 
 async function analyseScore() {

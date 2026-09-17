@@ -14,6 +14,7 @@ TRANSCRIPTION=0
 BACKEND=mlx
 MODEL=""
 LIST_MODELS=0
+KEEP_ORIGINALS=0
 
 usage() {
     cat <<'USAGE'
@@ -27,10 +28,12 @@ usage() {
   --torch             --backend torch 와 같음 (릴리스 가중치 그대로)
   --model <경로>      쓸 MLX 변환본 (기본 models/YuE2-3B-mlx-8bit)
   --list-models       쓸 수 있는 모델을 보여주고 종료
+  --keep-originals    변환이 끝나도 원본 가중치(YuE2-3B, MERT-v2)를 지우지 않음
   -h, --help          이 도움말
 
-처음 실행하면 YuE2 가중치 약 7.8GB 를 받고, 그것을 MLX 로 변환해 4.9GB 를 더 씁니다.
-두 번째부터는 바로 뜹니다. 대시보드 헤더에서도 모델을 바꿀 수 있습니다.
+처음 실행하면 YuE2 가중치 약 7.8GB 를 받아 MLX 로 변환하고(4.9GB), 변환이 끝나면
+원본 YuE2-3B(6.8GB)를 지웁니다. 두 번째부터는 바로 뜹니다. 대시보드 헤더에서도
+모델을 바꿀 수 있습니다.
 USAGE
 }
 
@@ -44,6 +47,7 @@ while [ $# -gt 0 ]; do
         --torch) BACKEND=torch; shift ;;
         --model) MODEL="${2:?--model 에 경로가 필요합니다}"; BACKEND=mlx; shift 2 ;;
         --list-models) LIST_MODELS=1; shift ;;
+        --keep-originals) KEEP_ORIGINALS=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "알 수 없는 옵션: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -84,7 +88,9 @@ echo "  준비됨"
 if [ "$LIST_MODELS" = 1 ]; then
     .venv/bin/python - <<'PYTHON'
 import mlx_backend
-rows = [("torch", "PyTorch bf16 (원본)", "릴리스 가중치 그대로, MPS")]
+original = mlx_backend.torch_available()
+rows = [("torch", "PyTorch bf16 (원본)",
+         "릴리스 가중치 그대로, MPS" + ("" if original else " · 받지 않음 (7.26GB)"))]
 for model in mlx_backend.discover():
     stages = "토큰 생성 + 합성" if "nar" in model["stages"] else "토큰 생성만"
     rows.append((model["id"], model["label"], f"{stages} · {model['bytes'] / 2**30:.1f}GB"))
@@ -100,9 +106,17 @@ fi
 # ---------------------------------------------------------------- weights
 
 if [ "$MODELS" = 1 ]; then
-    step "YuE2 가중치 확인 (YuE2-3B 7.26GB + YuE2-Vae 530MB)"
-    echo "  이미 받아두었으면 즉시 넘어갑니다. 처음이면 시간이 걸립니다."
-    .venv/bin/python download_models.py
+    # A conversion that carries synthesis and the tokenizer replaces the released
+    # checkpoint, so once it exists the original may be deleted and is not fetched.
+    if [ "$BACKEND" = mlx ] && .venv/bin/python -c 'import sys, mlx_backend; sys.exit(0 if mlx_backend.self_contained(sys.argv[1] or None) else 1)' "$MODEL"; then
+        step "VAE 가중치 확인 (YuE2-Vae 530MB)"
+        echo "  MLX 변환본이 있어 원본 YuE2-3B 는 필요 없습니다."
+        .venv/bin/python download_models.py --vae-only
+    else
+        step "YuE2 가중치 확인 (YuE2-3B 7.26GB + YuE2-Vae 530MB)"
+        echo "  이미 받아두었으면 즉시 넘어갑니다. 처음이면 시간이 걸립니다."
+        .venv/bin/python download_models.py
+    fi
 fi
 
 # Whether a converted model is usable is the loader's question, not a file
@@ -121,6 +135,13 @@ if [ "$BACKEND" = mlx ]; then
         if ! .venv/bin/python mlx_convert.py; then
             warn "변환에 실패했습니다. PyTorch 백엔드로 계속합니다."
             BACKEND=torch
+        # The conversion stands in for the released checkpoint entirely (tokenizer
+        # included); only keep the original if something here still needs it.
+        elif [ "$KEEP_ORIGINALS" = 0 ] \
+             && .venv/bin/python -c 'import sys, mlx_backend; sys.exit(0 if mlx_backend.self_contained() else 1)'; then
+            step "원본 YuE2-3B 삭제 (변환본만으로 곡을 만듭니다)"
+            .venv/bin/python prune_models.py m-a-p/YuE2-3B
+            echo "  --torch 로 실행하면 다시 받습니다. 지우지 않으려면 --keep-originals."
         fi
     fi
 fi
@@ -128,6 +149,28 @@ fi
 if [ "$TRANSCRIPTION" = 1 ] && [ ! -x .venv-sheetsage/bin/python ]; then
     step "SheetSage2 설치 (오디오 전사용, 약 2.8GB)"
     ./setup_sheetsage.sh
+fi
+
+# Transcription's audio encoder runs on MLX once converted (mlx_sheetsage.py):
+# faster and lighter than PyTorch, same score. This covers fresh installs and
+# ones from before the conversion existed. The pin matches requirements.txt.
+if [ -x .venv-sheetsage/bin/python ] && [ -f sheetsage2/infer.py ] \
+   && [ ! -f models/SheetSage2-encoder-mlx/encoder.safetensors ] \
+   && [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+    step "전사 인코더를 MLX 로 변환 (1.2GB, 한 번만)"
+    echo "  원본 MERT-v2(2.4GB)가 없으면 먼저 받습니다."
+    if VIRTUAL_ENV="$PWD/.venv-sheetsage" uv pip install --quiet "mlx==0.32.2" \
+       && .venv-sheetsage/bin/python mlx_sheetsage.py convert; then
+        echo "  이후 전사는 인코더를 MLX 로 돌립니다."
+        # sheetsage_runner.py answers SheetSage2's check on the parent from the
+        # conversion record, so the MLX path never reads it again.
+        if [ "$KEEP_ORIGINALS" = 0 ]; then
+            step "원본 MERT-v2 삭제 (변환본만으로 전사합니다)"
+            .venv/bin/python prune_models.py m-a-p/MERT-v2-FullSong
+        fi
+    else
+        warn "변환에 실패했습니다. 전사는 PyTorch 로 계속합니다."
+    fi
 fi
 
 # ---------------------------------------------------------------- run

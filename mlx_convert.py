@@ -67,7 +67,7 @@ VAE 디코더(`m-a-p/YuE2-Vae`)는 변환 대상이 아니다. 오디오 디코�
 ## 쓰는 법
 
 ```bash
-./start --mlx                      # 대시보드 전체를 이 모델로
+./start --model models/{name}       # 대시보드 전체를 이 모델로
 ```
 
 ```python

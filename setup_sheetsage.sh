@@ -10,4 +10,5 @@ uv pip install "torch==2.8.0" "torchaudio==2.8.0"
 uv pip install "transformers==4.45.2" "huggingface-hub==0.36.0" "safetensors" \
                "numpy<2" "scipy" "mir_eval" "pretty_midi" "mido" "setuptools"
 .venv-sheetsage/bin/hf download m-a-p/SheetSage2 --local-dir sheetsage2
+# ./start then converts the audio encoder to MLX (mlx_sheetsage.py).
 echo "SHEETSAGE_SETUP_OK"

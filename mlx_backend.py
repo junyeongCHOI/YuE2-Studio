@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parent
 MODELS_DIR = ROOT / "models"
 DEFAULT_MODEL_DIR = MODELS_DIR / "YuE2-3B-mlx-8bit"
 TORCH_ID = "torch"
+TORCH_REPO = "m-a-p/YuE2-3B"
 
 _lock = threading.Lock()
 _state = {"dir": None, "model": None, "installed": False, "stages": (), "originals": None}
@@ -47,6 +48,31 @@ def available(model_dir=None) -> bool:
     return ((directory / "config.json").is_file()
             and (directory / "model.safetensors").is_file()
             and mlx_importable())
+
+
+def self_contained(model_dir=None) -> bool:
+    """Whether songs can be made from this conversion with the original deleted.
+
+    The pipeline still needs the tokenizer, which the converter copies over; an
+    AR-only conversion hands synthesis back to the BF16 torch model.
+    """
+    directory = Path(model_dir or DEFAULT_MODEL_DIR)
+    if not available(directory) or not (directory / "qwen.tiktoken").is_file():
+        return False
+    try:
+        return not _config(directory).get("ar_only", False)
+    except (OSError, ValueError):
+        return False
+
+
+def torch_available() -> bool:
+    """Whether the released BF16 weights are in the Hugging Face cache.
+
+    A cache lookup only, so it is cheap enough for every state poll and never
+    starts the 7GB download that asking snapshot_download would.
+    """
+    from huggingface_hub import try_to_load_from_cache
+    return isinstance(try_to_load_from_cache(TORCH_REPO, "model.safetensors"), str)
 
 
 def describe(model_dir) -> dict:
@@ -108,8 +134,27 @@ def release():
         if _state["model"] is None:
             return
         _state["model"] = None
+        import gc
         import mlx.core as mx
+        # Arrays still reachable through a cycle would survive clear_cache().
+        gc.collect()
         mx.clear_cache()
+
+
+def loaded() -> bool:
+    return _state["model"] is not None
+
+
+def pipeline_dir():
+    """The directory the yue2 pipeline should be built on, or None for the original.
+
+    A self-contained conversion stands in for the released checkpoint entirely:
+    its tokenizer feeds the pipeline and its weights are the ones on record.
+    """
+    directory = _state["dir"]
+    if _state["installed"] and self_contained(directory):
+        return Path(directory)
+    return None
 
 
 def _generate_tokens(_torch_model, prefix, sampling, seed, phase, **kwargs):
